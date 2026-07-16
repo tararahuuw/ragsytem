@@ -1,0 +1,41 @@
+package router
+
+import (
+	"github.com/gin-gonic/gin"
+	swaggerFiles "github.com/swaggo/files"
+	ginSwagger "github.com/swaggo/gin-swagger"
+	"gorm.io/gorm"
+
+	"github.com/tararahuuw/ragsytem/internal/config"
+	"github.com/tararahuuw/ragsytem/internal/middleware"
+
+	authroute "github.com/tararahuuw/ragsytem/internal/router/auth"
+	healthroute "github.com/tararahuuw/ragsytem/internal/router/health"
+)
+
+// New builds the Gin engine: global middleware, swagger UI, and versioned routes.
+// Each module registers itself (and wires its own dependencies) via its Register
+// function, keeping modules self-contained.
+func New(cfg *config.Config, db *gorm.DB) *gin.Engine {
+	if cfg.IsProduction() {
+		gin.SetMode(gin.ReleaseMode)
+	}
+
+	r := gin.New()
+	r.Use(
+		middleware.RequestID(),  // set id first so Recovery/AccessLog can log it
+		middleware.Recovery(),   // panic safety net -> standardized 500 + stack log
+		middleware.AccessLog(),  // structured request log (slog) for tracing
+		middleware.CORS(),
+	)
+
+	// swagger UI
+	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
+
+	// API v1 — register modules here
+	v1 := r.Group("/api/v1")
+	healthroute.Register(v1, db)
+	authroute.Register(v1, db)
+
+	return r
+}
