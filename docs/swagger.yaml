@@ -91,6 +91,14 @@ definitions:
         example: false
         type: boolean
     type: object
+  user.UpdateRoleRequest:
+    properties:
+      role:
+        example: admin
+        type: string
+    required:
+    - role
+    type: object
   user.UpdateUserRequest:
     properties:
       name:
@@ -113,6 +121,9 @@ definitions:
         type: string
       organization_code:
         example: pln
+        type: string
+      role:
+        example: user
         type: string
     type: object
 host: localhost:8080
@@ -201,7 +212,8 @@ paths:
     post:
       consumes:
       - application/json
-      description: Creates a user with an organizationCode (bcrypt-hashed password).
+      description: Admin-only. Creates a user (role always "user") in the given organizationCode,
+        bcrypt-hashed.
       parameters:
       - description: Registration payload
         in: body
@@ -225,11 +237,21 @@ paths:
           description: Bad Request
           schema:
             $ref: '#/definitions/response.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
         "409":
           description: Conflict
           schema:
             $ref: '#/definitions/response.ErrorResponse'
-      summary: Register a new user
+      security:
+      - BearerAuth: []
+      summary: Register a new user (admin only)
       tags:
       - auth
   /healthz:
@@ -251,7 +273,8 @@ paths:
       - health
   /users/{id}:
     delete:
-      description: Soft-deletes a user within the caller's organization (sets deleted_at).
+      description: Admin-only. Soft-deletes a user (sets deleted_at). Admin is global
+        (any organization).
       parameters:
       - description: User ID
         in: path
@@ -279,7 +302,7 @@ paths:
             $ref: '#/definitions/response.ErrorResponse'
       security:
       - BearerAuth: []
-      summary: Soft delete user
+      summary: Soft delete user (admin only)
       tags:
       - user
     get:
@@ -366,6 +389,57 @@ paths:
       security:
       - BearerAuth: []
       summary: Update user
+      tags:
+      - user
+  /users/{id}/role:
+    patch:
+      consumes:
+      - application/json
+      description: Admin-only. Sets a user's role to "admin" or "user" (global). You
+        cannot change your own role.
+      parameters:
+      - description: User ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: New role
+        in: body
+        name: payload
+        required: true
+        schema:
+          $ref: '#/definitions/user.UpdateRoleRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.BaseResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/user.UserResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Change a user's role (admin only)
       tags:
       - user
   /users/me:

@@ -287,7 +287,8 @@ make run              # server :8080
       **isolasi tenant** per organizationCode.
 - [x] **RBAC (admin/user)**: role di JWT + `RequireRole`. Register & soft-delete **admin-only**;
       admin **global** (bypass tenant). Bootstrap admin manual via SQL.
-- [ ] Auth lanjutan: endpoint ubah role via API, forgot/reset password, revoke refresh token.
+- [x] **Ubah role via API**: `PATCH /users/{id}/role` (admin-only, admin/user, self-guard).
+- [ ] Auth lanjutan: forgot/reset password, revoke refresh token.
 - [ ] Domain `document` + upload file.
 - [ ] Ingestion (ekstraksi teks / chunking).
 - [ ] Integrasi mesin embedding + vector store.
@@ -337,3 +338,8 @@ make run              # server :8080
   global** (bypass isolasi tenant lintas org); role `user` tetap tenant-scoped. Bootstrap admin
   **manual via SQL** (`UPDATE users SET role='admin' WHERE email=...`) — tak ada auto-seed.
   Unit test: `RequireRole`, router RBAC gating (register/delete: 401 no-token, 403 non-admin).
+- **2026-07-17** — Endpoint **ubah role** `PATCH /users/{id}/role` (admin-only via
+  `RequireRole(admin)`): set role `admin`/`user` (validasi `rbac.IsValidRole` → 400
+  `INVALID_ROLE`), admin global (tanpa tenant check), **self-guard** (tak bisa ubah role sendiri →
+  400 `CANNOT_CHANGE_OWN_ROLE`), 404 bila user tak ada. Reuse `repository/user.Update`. Ini
+  melengkapi bootstrap SQL → promote/demote kini bisa lewat API (setelah admin pertama ada).

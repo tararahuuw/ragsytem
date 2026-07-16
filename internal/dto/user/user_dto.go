@@ -11,8 +11,13 @@ type UserResponse struct {
 }
 
 // UpdateUserRequest is the payload for PUT /users/{id}. All fields optional;
-// only provided fields are updated. Email & organizationCode are immutable.
+// only provided fields are updated. Email, organizationCode & role are immutable here.
 type UpdateUserRequest struct {
 	Name     string `json:"name" example:"John Updated"`
 	Password string `json:"password" example:"newSecret123"`
+}
+
+// UpdateRoleRequest is the payload for PATCH /users/{id}/role (admin only).
+type UpdateRoleRequest struct {
+	Role string `json:"role" binding:"required" example:"admin"`
 }

@@ -23,6 +23,7 @@ Base URL: `http://localhost:8080/api/v1` · Envelope: `internal/response` (`Base
 | GET | `/users/me` | user | Bearer | Profil user dari token |
 | GET | `/users/{id}` | user | Bearer | Ambil user (user: se-org · admin: global) |
 | PUT | `/users/{id}` | user | Bearer | Update name/password (user: se-org · admin: global) |
+| PATCH | `/users/{id}/role` | user | **admin** | Ubah role user (admin/user), admin global |
 | DELETE | `/users/{id}` | user | **admin** | Soft delete (admin global) |
 
 > **Auth**: `–` publik · `Bearer` butuh `Authorization: Bearer <access_token>` ·
@@ -138,6 +139,23 @@ Base URL: `http://localhost:8080/api/v1` · Envelope: `internal/response` (`Base
   password baru di-**bcrypt**).
 - **Bisnis logic:** fetch scoped (admin bypass tenant) → set field → `Save`.
 - **Response:** `200` (data `UserResponse`) · `400` · `401` · `403` · `404`.
+
+### PATCH `/users/{id}/role`  🔒 admin only
+- **Tujuan:** admin mengubah role user (mis. **promote user → admin**, atau demote admin → user).
+  **Auth:** **admin** (global — bisa lintas org).
+- **Request (`userdto.UpdateRoleRequest`):** `role` (required, harus `"admin"` atau `"user"`).
+- **Bisnis logic:**
+  1. `RequireRole(admin)` (non-admin → `403 FORBIDDEN_ROLE`).
+  2. Validasi `role` ∈ {admin, user} → selain itu `400 INVALID_ROLE`.
+  3. **Self-guard:** admin **tidak boleh** mengubah role dirinya sendiri (`id == actorID`) →
+     `400 CANNOT_CHANGE_OWN_ROLE` (cegah self-lockout).
+  4. Load user (`404` bila tak ada) → set `role` → `Save`. Idempotent (set role sama → tetap `200`).
+- **Response:** `200` (data `UserResponse` dgn `role` baru) · `400 INVALID_ROLE` ·
+  `400 CANNOT_CHANGE_OWN_ROLE` · `400 VALIDATION_ERROR` (id/payload) · `401` · `403 FORBIDDEN_ROLE` ·
+  `404 USER_NOT_FOUND`.
+- **Logging:** WARN invalid role / self-change · INFO `update role: success` (old→new, by_user_id).
+- **Bootstrap note:** endpoint ini menggantikan kebutuhan promote via SQL **setelah** ada minimal
+  1 admin awal. Admin pertama tetap disiapkan manual via SQL.
 
 ### DELETE `/users/{id}`  🔒 admin only
 - **Tujuan:** **soft delete** (set `deleted_at`, baris tetap ada). **Auth:** **admin** (global).

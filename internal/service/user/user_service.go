@@ -15,8 +15,10 @@ import (
 
 // Domain errors surfaced to the controller for HTTP mapping.
 var (
-	ErrUserNotFound = errors.New("user not found")
-	ErrForbiddenOrg = errors.New("forbidden: user belongs to a different organization")
+	ErrUserNotFound        = errors.New("user not found")
+	ErrForbiddenOrg        = errors.New("forbidden: user belongs to a different organization")
+	ErrInvalidRole         = errors.New("invalid role")
+	ErrCannotChangeOwnRole = errors.New("cannot change your own role")
 )
 
 // Service holds user-management business logic. Non-admin callers are scoped to
@@ -26,6 +28,9 @@ type Service interface {
 	GetByID(ctx context.Context, id uint, actorOrg, actorRole string) (userdto.UserResponse, error)
 	Update(ctx context.Context, id uint, actorOrg, actorRole string, req userdto.UpdateUserRequest) (userdto.UserResponse, error)
 	SoftDelete(ctx context.Context, id uint, actorOrg, actorRole string) error
+	// UpdateRole changes a user's role (admin-only, enforced at the route). The
+	// actor cannot change their own role (self-lockout guard).
+	UpdateRole(ctx context.Context, id uint, newRole string, actorID uint) (userdto.UserResponse, error)
 }
 
 type service struct {
@@ -109,6 +114,42 @@ func (s *service) SoftDelete(ctx context.Context, id uint, actorOrg, actorRole s
 
 	log.Info("user: soft deleted", "user_id", id, "organization_code", u.OrganizationCode)
 	return nil
+}
+
+func (s *service) UpdateRole(ctx context.Context, id uint, newRole string, actorID uint) (userdto.UserResponse, error) {
+	log := logger.FromContext(ctx)
+
+	if !rbac.IsValidRole(newRole) {
+		log.Warn("update role: invalid role value", "target_user_id", id, "role", newRole)
+		return userdto.UserResponse{}, ErrInvalidRole
+	}
+	// Prevent an admin from changing their own role (avoids accidental
+	// self-lockout / privilege confusion).
+	if id == actorID {
+		log.Warn("update role: self-change blocked", "user_id", id)
+		return userdto.UserResponse{}, ErrCannotChangeOwnRole
+	}
+
+	// Admin is global here (route already enforces admin), so no tenant check.
+	u, err := s.repo.FindByID(ctx, id)
+	if err != nil {
+		log.Error("update role: failed to look up", "user_id", id, "error", err)
+		return userdto.UserResponse{}, err
+	}
+	if u == nil {
+		log.Warn("update role: user not found", "user_id", id)
+		return userdto.UserResponse{}, ErrUserNotFound
+	}
+
+	oldRole := u.Role
+	u.Role = newRole
+	if err := s.repo.Update(ctx, u); err != nil {
+		log.Error("update role: failed to persist", "user_id", id, "error", err)
+		return userdto.UserResponse{}, err
+	}
+
+	log.Info("update role: success", "user_id", id, "old_role", oldRole, "new_role", newRole, "by_user_id", actorID)
+	return toUserResponse(u), nil
 }
 
 func toUserResponse(u *usermodel.User) userdto.UserResponse {

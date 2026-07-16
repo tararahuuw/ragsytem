@@ -101,6 +101,26 @@ Register user org `icon` (via admin), lalu admin akses `GET /users/{id_icon}`.
 ### TC-13 — Refresh → 200; refresh pakai access token → 401
 `POST /auth/refresh` dengan refresh token → `200`; dengan access token → `401 INVALID_REFRESH_TOKEN`.
 
+### TC-14 — Ubah role: gating & validasi (`PATCH /users/{id}/role`)
+Target = user biasa `UID` (buat via admin dulu). Semua via header sesuai.
+| Sub | Request | Ekspektasi |
+|---|---|---|
+| a | tanpa token | `401 UNAUTHORIZED` |
+| b | token USER biasa, body `{"role":"admin"}` | `403 FORBIDDEN_ROLE` |
+| c | admin, body `{"role":"superuser"}` | `400 INVALID_ROLE` |
+| d | admin, ubah role **diri sendiri** | `400 CANNOT_CHANGE_OWN_ROLE` |
+| e | admin, user id tak ada | `404 USER_NOT_FOUND` |
+
+### TC-15 — Promote user → admin (end-to-end)
+```bash
+curl -s -X PATCH "$BASE_URL/users/$UID/role" -H "Authorization: Bearer $ADMIN_TOKEN" \
+  -H "Content-Type: application/json" -d '{"role":"admin"}'
+```
+- **Ekspektasi:** `200`; `data.role="admin"`.
+- **Bukti fungsional:** login ulang user tsb → token `role:"admin"` → sekarang **bisa** hit
+  `POST /auth/register` (`201`) yang sebelumnya `403`.
+- **Demote balik:** `{"role":"user"}` → `200`; login ulang → register kembali `403`.
+
 ---
 
 ## Teardown (opsional)

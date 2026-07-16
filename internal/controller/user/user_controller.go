@@ -140,6 +140,52 @@ func (c *Controller) Delete(ctx *gin.Context) {
 	response.OK(ctx, "user deleted", nil)
 }
 
+// UpdateRole godoc
+//
+//	@Summary		Change a user's role (admin only)
+//	@Description	Admin-only. Sets a user's role to "admin" or "user" (global). You cannot change your own role.
+//	@Tags			user
+//	@Accept			json
+//	@Produce		json
+//	@Security		BearerAuth
+//	@Param			id		path		int							true	"User ID"
+//	@Param			payload	body		userdto.UpdateRoleRequest	true	"New role"
+//	@Success		200		{object}	response.BaseResponse{data=userdto.UserResponse}
+//	@Failure		400		{object}	response.ErrorResponse
+//	@Failure		401		{object}	response.ErrorResponse
+//	@Failure		403		{object}	response.ErrorResponse
+//	@Failure		404		{object}	response.ErrorResponse
+//	@Router			/users/{id}/role [patch]
+func (c *Controller) UpdateRole(ctx *gin.Context) {
+	log := logger.FromContext(ctx.Request.Context())
+
+	id, ok := c.parseID(ctx)
+	if !ok {
+		return
+	}
+
+	var req userdto.UpdateRoleRequest
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		log.Warn("update role: invalid payload", "error", err.Error())
+		response.ValidationError(ctx, "invalid request payload", err.Error())
+		return
+	}
+
+	res, err := c.svc.UpdateRole(ctx.Request.Context(), id, req.Role, middleware.CurrentUserID(ctx))
+	if err != nil {
+		switch {
+		case errors.Is(err, usersvc.ErrInvalidRole):
+			response.Error(ctx, http.StatusBadRequest, err.Error(), "INVALID_ROLE")
+		case errors.Is(err, usersvc.ErrCannotChangeOwnRole):
+			response.Error(ctx, http.StatusBadRequest, err.Error(), "CANNOT_CHANGE_OWN_ROLE")
+		default:
+			c.mapError(ctx, err, "update role")
+		}
+		return
+	}
+	response.OK(ctx, "role updated", res)
+}
+
 // parseID reads and validates the :id path param, writing a 400 on failure.
 func (c *Controller) parseID(ctx *gin.Context) (uint, bool) {
 	raw := ctx.Param("id")

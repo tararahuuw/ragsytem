@@ -168,6 +168,23 @@
           }
         },
         {
+          "name": "Change Role (admin)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{access_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"role\": \"admin\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{base_url}}/users/{{user_id}}/role", "host": ["{{base_url}}"], "path": ["users", "{{user_id}}", "role"] },
+            "description": "ADMIN ONLY. Ubah role user jadi 'admin' atau 'user'. 400 kalau role invalid / ubah role sendiri; 403 kalau bukan admin."
+          }
+        },
+        {
           "name": "Delete (soft)",
           "request": {
             "method": "DELETE",

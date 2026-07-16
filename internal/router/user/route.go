@@ -26,7 +26,8 @@ func Register(rg *gin.RouterGroup, cfg *config.Config, db *gorm.DB) {
 		group.GET("/me", ctrl.Me)
 		group.GET("/:id", ctrl.GetByID)
 		group.PUT("/:id", ctrl.Update)
-		// Admin-only: soft delete.
+		// Admin-only: change role & soft delete.
+		group.PATCH("/:id/role", middleware.RequireRole(rbac.RoleAdmin), ctrl.UpdateRole)
 		group.DELETE("/:id", middleware.RequireRole(rbac.RoleAdmin), ctrl.Delete)
 	}
 }
