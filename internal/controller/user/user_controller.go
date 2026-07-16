@@ -38,8 +38,9 @@ func NewController(svc usersvc.Service) *Controller {
 func (c *Controller) Me(ctx *gin.Context) {
 	id := middleware.CurrentUserID(ctx)
 	org := middleware.CurrentOrgCode(ctx)
+	role := middleware.CurrentRole(ctx)
 
-	res, err := c.svc.GetByID(ctx.Request.Context(), id, org)
+	res, err := c.svc.GetByID(ctx.Request.Context(), id, org, role)
 	if err != nil {
 		c.mapError(ctx, err, "get current user")
 		return
@@ -66,7 +67,7 @@ func (c *Controller) GetByID(ctx *gin.Context) {
 		return
 	}
 
-	res, err := c.svc.GetByID(ctx.Request.Context(), id, middleware.CurrentOrgCode(ctx))
+	res, err := c.svc.GetByID(ctx.Request.Context(), id, middleware.CurrentOrgCode(ctx), middleware.CurrentRole(ctx))
 	if err != nil {
 		c.mapError(ctx, err, "get user")
 		return
@@ -105,7 +106,7 @@ func (c *Controller) Update(ctx *gin.Context) {
 		return
 	}
 
-	res, err := c.svc.Update(ctx.Request.Context(), id, middleware.CurrentOrgCode(ctx), req)
+	res, err := c.svc.Update(ctx.Request.Context(), id, middleware.CurrentOrgCode(ctx), middleware.CurrentRole(ctx), req)
 	if err != nil {
 		c.mapError(ctx, err, "update user")
 		return
@@ -115,8 +116,8 @@ func (c *Controller) Update(ctx *gin.Context) {
 
 // Delete godoc
 //
-//	@Summary		Soft delete user
-//	@Description	Soft-deletes a user within the caller's organization (sets deleted_at).
+//	@Summary		Soft delete user (admin only)
+//	@Description	Admin-only. Soft-deletes a user (sets deleted_at). Admin is global (any organization).
 //	@Tags			user
 //	@Produce		json
 //	@Security		BearerAuth
@@ -132,7 +133,7 @@ func (c *Controller) Delete(ctx *gin.Context) {
 		return
 	}
 
-	if err := c.svc.SoftDelete(ctx.Request.Context(), id, middleware.CurrentOrgCode(ctx)); err != nil {
+	if err := c.svc.SoftDelete(ctx.Request.Context(), id, middleware.CurrentOrgCode(ctx), middleware.CurrentRole(ctx)); err != nil {
 		c.mapError(ctx, err, "delete user")
 		return
 	}

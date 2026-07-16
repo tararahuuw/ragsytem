@@ -7,6 +7,7 @@ type UserResponse struct {
 	Name             string `json:"name" example:"John Doe"`
 	Email            string `json:"email" example:"john@example.com"`
 	OrganizationCode string `json:"organization_code" example:"pln"`
+	Role             string `json:"role" example:"user"`
 }
 
 // UpdateUserRequest is the payload for PUT /users/{id}. All fields optional;

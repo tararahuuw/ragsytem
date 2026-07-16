@@ -56,8 +56,9 @@ ragsytem/
 │   ├── database/              # koneksi GORM + Migrate()
 │   ├── logger/                # setup slog + helper request-scoped (FromContext)
 │   ├── response/              # BaseResponse, ErrorResponse + helper (Success/Error/...)
-│   ├── jwt/                   # generate/parse JWT (claims: user_id, email, organization_code, token_type)
-│   ├── middleware/            # cors, request_id, access_log, recovery, auth (JWTAuth + CurrentOrgCode/UserID)
+│   ├── jwt/                   # generate/parse JWT (claims: user_id, email, organization_code, role, token_type)
+│   ├── rbac/                  # konstanta role (RoleAdmin, RoleUser)
+│   ├── middleware/            # cors, request_id, access_log, recovery, auth (JWTAuth, RequireRole, CurrentOrgCode/Role/UserID)
 │   ├── router/                # router.go (aggregator) + <module>/route.go
 │   │   ├── health/route.go    #   Register(v1, db)
 │   │   ├── auth/route.go      #   Register(v1, cfg, db) — public
@@ -284,7 +285,9 @@ make run              # server :8080
       access+refresh** dengan claim `organization_code`, middleware `JWTAuth`.
 - [x] **User management**: `/users/me`, GET/PUT/DELETE `/users/{id}` (soft delete),
       **isolasi tenant** per organizationCode.
-- [ ] Auth lanjutan: role/authorization (admin), forgot/reset password, revoke refresh token.
+- [x] **RBAC (admin/user)**: role di JWT + `RequireRole`. Register & soft-delete **admin-only**;
+      admin **global** (bypass tenant). Bootstrap admin manual via SQL.
+- [ ] Auth lanjutan: endpoint ubah role via API, forgot/reset password, revoke refresh token.
 - [ ] Domain `document` + upload file.
 - [ ] Ingestion (ekstraksi teks / chunking).
 - [ ] Integrasi mesin embedding + vector store.
@@ -327,3 +330,10 @@ make run              # server :8080
   **Isolasi tenant**: operasi user dibatasi `organizationCode` token (beda org → 403). Config
   JWT (`JWT_SECRET`, `JWT_ACCESS_TTL`, `JWT_REFRESH_TTL`). Unit test: `internal/jwt`,
   `middleware` (JWTAuth), router (protected routes butuh token).
+- **2026-07-17** — **RBAC admin/user (via /rag-dev)**. Tambah `internal/rbac` (RoleAdmin/RoleUser),
+  claim `role` di JWT, `middleware.RequireRole` + `CurrentRole`. Kolom `users.role`
+  (default `user`, backfill di migrate). **Register & DELETE user jadi admin-only**
+  (`JWTAuth`+`RequireRole(admin)`); register selalu bikin role `user`. **Admin = super-admin
+  global** (bypass isolasi tenant lintas org); role `user` tetap tenant-scoped. Bootstrap admin
+  **manual via SQL** (`UPDATE users SET role='admin' WHERE email=...`) — tak ada auto-seed.
+  Unit test: `RequireRole`, router RBAC gating (register/delete: 401 no-token, 403 non-admin).

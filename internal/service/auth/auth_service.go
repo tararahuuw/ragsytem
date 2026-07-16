@@ -12,6 +12,7 @@ import (
 	appjwt "github.com/tararahuuw/ragsytem/internal/jwt"
 	"github.com/tararahuuw/ragsytem/internal/logger"
 	usermodel "github.com/tararahuuw/ragsytem/internal/model/user"
+	"github.com/tararahuuw/ragsytem/internal/rbac"
 	userrepo "github.com/tararahuuw/ragsytem/internal/repository/user"
 )
 
@@ -67,11 +68,14 @@ func (s *service) Register(ctx context.Context, req authdto.RegisterRequest) (us
 		return userdto.UserResponse{}, err
 	}
 
+	// Registration always creates a plain user; admins are promoted out-of-band
+	// (see CLAUDE.md / ROUTES.md bootstrap).
 	u := &usermodel.User{
 		Name:             req.Name,
 		Email:            req.Email,
 		Password:         string(hash),
 		OrganizationCode: req.OrganizationCode,
+		Role:             rbac.RoleUser,
 	}
 	if err := s.repo.Create(ctx, u); err != nil {
 		log.Error("register: failed to create user", "email", req.Email, "error", err)
@@ -139,11 +143,11 @@ func (s *service) Refresh(ctx context.Context, req authdto.RefreshRequest) (auth
 }
 
 func (s *service) issueTokens(u *usermodel.User) (authdto.TokenResponse, error) {
-	access, err := appjwt.Generate(s.cfg.Secret, u.ID, u.Email, u.OrganizationCode, appjwt.TypeAccess, s.cfg.AccessTTL)
+	access, err := appjwt.Generate(s.cfg.Secret, u.ID, u.Email, u.OrganizationCode, u.Role, appjwt.TypeAccess, s.cfg.AccessTTL)
 	if err != nil {
 		return authdto.TokenResponse{}, err
 	}
-	refresh, err := appjwt.Generate(s.cfg.Secret, u.ID, u.Email, u.OrganizationCode, appjwt.TypeRefresh, s.cfg.RefreshTTL)
+	refresh, err := appjwt.Generate(s.cfg.Secret, u.ID, u.Email, u.OrganizationCode, u.Role, appjwt.TypeRefresh, s.cfg.RefreshTTL)
 	if err != nil {
 		return authdto.TokenResponse{}, err
 	}
@@ -161,5 +165,6 @@ func toUserResponse(u *usermodel.User) userdto.UserResponse {
 		Name:             u.Name,
 		Email:            u.Email,
 		OrganizationCode: u.OrganizationCode,
+		Role:             u.Role,
 	}
 }

@@ -52,14 +52,17 @@
           ],
           "request": {
             "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{access_token}}" }
+            ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"name\": \"{{name}}\",\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\",\n  \"organization_code\": \"{{organization_code}}\"\n}",
+              "raw": "{\n  \"name\": \"{{new_user_name}}\",\n  \"email\": \"{{new_user_email}}\",\n  \"password\": \"{{new_user_password}}\",\n  \"organization_code\": \"{{organization_code}}\"\n}",
               "options": { "raw": { "language": "json" } }
             },
             "url": { "raw": "{{base_url}}/auth/register", "host": ["{{base_url}}"], "path": ["auth", "register"] },
-            "description": "Daftar user baru (+organizationCode). 201 sukses, 409 email sudah ada, 400 payload invalid."
+            "description": "ADMIN ONLY (role selalu jadi 'user'). Login sebagai admin dulu (lihat env: email/password = admin yang di-promote via SQL). 201 sukses · 401 tanpa token · 403 kalau bukan admin · 409 email sudah ada."
           }
         },
         {
@@ -170,7 +173,7 @@
             "method": "DELETE",
             "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }],
             "url": { "raw": "{{base_url}}/users/{{user_id}}", "host": ["{{base_url}}"], "path": ["users", "{{user_id}}"] },
-            "description": "Soft delete (set deleted_at). User tak bisa login lagi; email bebas dipakai ulang."
+            "description": "ADMIN ONLY. Soft delete (set deleted_at). 403 kalau bukan admin. User tak bisa login lagi; email bebas dipakai ulang."
           }
         }
       ]

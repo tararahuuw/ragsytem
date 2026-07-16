@@ -6,6 +6,8 @@ import (
 
 	"github.com/tararahuuw/ragsytem/internal/config"
 	authctrl "github.com/tararahuuw/ragsytem/internal/controller/auth"
+	"github.com/tararahuuw/ragsytem/internal/middleware"
+	"github.com/tararahuuw/ragsytem/internal/rbac"
 	userrepo "github.com/tararahuuw/ragsytem/internal/repository/user"
 	authsvc "github.com/tararahuuw/ragsytem/internal/service/auth"
 )
@@ -25,8 +27,13 @@ func Register(rg *gin.RouterGroup, cfg *config.Config, db *gorm.DB) {
 
 	group := rg.Group("/auth")
 	{
-		group.POST("/register", ctrl.Register)
+		// Public
 		group.POST("/login", ctrl.Login)
 		group.POST("/refresh", ctrl.Refresh)
+		// Admin-only: creating users requires a valid admin access token.
+		group.POST("/register",
+			middleware.JWTAuth(cfg),
+			middleware.RequireRole(rbac.RoleAdmin),
+			ctrl.Register)
 	}
 }

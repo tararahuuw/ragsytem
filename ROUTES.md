@@ -17,23 +17,40 @@ Base URL: `http://localhost:8080/api/v1` · Envelope: `internal/response` (`Base
 | Method | Path | Module | Auth | Ringkas |
 |---|---|---|---|---|
 | GET | `/healthz` | health | – | Cek kesehatan service + DB |
-| POST | `/auth/register` | auth | – | Daftar user baru (+organizationCode), bcrypt |
+| POST | `/auth/register` | auth | **admin** | Buat user baru (role selalu `user`), bcrypt |
 | POST | `/auth/login` | auth | – | Login → access + refresh JWT |
 | POST | `/auth/refresh` | auth | – | Tukar refresh token → token pair baru |
 | GET | `/users/me` | user | Bearer | Profil user dari token |
-| GET | `/users/{id}` | user | Bearer | Ambil user (tenant-scoped) |
-| PUT | `/users/{id}` | user | Bearer | Update name/password (tenant-scoped) |
-| DELETE | `/users/{id}` | user | Bearer | Soft delete (tenant-scoped) |
+| GET | `/users/{id}` | user | Bearer | Ambil user (user: se-org · admin: global) |
+| PUT | `/users/{id}` | user | Bearer | Update name/password (user: se-org · admin: global) |
+| DELETE | `/users/{id}` | user | **admin** | Soft delete (admin global) |
 
-> **Auth**: `–` publik · `Bearer` butuh header `Authorization: Bearer <access_token>`.
+> **Auth**: `–` publik · `Bearer` butuh `Authorization: Bearer <access_token>` ·
+> **admin** butuh access token dengan role `admin`.
+
+## RBAC (role admin & user)
+
+- **Role** disimpan di `users.role` (default `user`) dan di-embed sebagai claim `role` di JWT.
+- **`user`** (default): akses dibatasi organizationCode-nya sendiri (tenant isolation).
+- **`admin`** (super-admin, **global**): bypass tenant isolation; satu-satunya yang boleh
+  **register** user baru & **soft delete** user, di organization mana pun.
+- **Register selalu membuat role `user`.** Admin **tidak** lahir dari API — dibuat/di-promote
+  **manual via SQL** (bootstrap):
+  ```sql
+  -- promote user existing jadi admin
+  UPDATE users SET role = 'admin' WHERE email = 'admin@pln.co.id';
+  ```
+  (Karena register admin-only, admin pertama wajib disiapkan lewat DB langsung.)
+- Middleware `RequireRole("admin")` (setelah `JWTAuth`) menjaga endpoint admin → non-admin
+  dapat `403 FORBIDDEN_ROLE`, tanpa token `401 UNAUTHORIZED`.
 
 ## Konsep JWT & multi-tenant (organizationCode)
 
 - Saat **register**, user menyertakan `organizationCode` (mis. `"pln"`) → disimpan di kolom
   `users.organization_code`.
-- Saat **login/refresh**, `organizationCode` di-embed sebagai **custom claim** di JWT (bareng
-  `user_id`, `email`, `token_type`, `exp`). Contoh payload access token:
-  `{ "user_id":1, "email":"budi@pln.co.id", "organization_code":"pln", "token_type":"access", ... }`
+- Saat **login/refresh**, `organizationCode` + `role` di-embed sebagai **custom claim** di JWT
+  (bareng `user_id`, `email`, `token_type`, `exp`). Contoh payload access token:
+  `{ "user_id":1, "email":"budi@pln.co.id", "organization_code":"pln", "role":"user", "token_type":"access", ... }`
 - Middleware `JWTAuth` mem-parse token tiap request, menaruh `user_id`/`email`/`organization_code`
   ke context. Handler tahu "yang ngehit ini org-nya `pln`" **tanpa query DB**.
 - **Dua tipe token**: `access` (pendek, default 15m) untuk akses API; `refresh` (panjang, default
@@ -54,22 +71,24 @@ Base URL: `http://localhost:8080/api/v1` · Envelope: `internal/response` (`Base
 
 ## Module: auth
 
-### POST `/auth/register`
-- **Tujuan:** membuat akun user baru dalam sebuah organization. **Auth:** publik.
+### POST `/auth/register`  🔒 admin only
+- **Tujuan:** admin membuat akun user baru dalam sebuah organization.
+- **Auth:** **admin** (Bearer access token role `admin`). Tanpa token → `401`; role `user` → `403`.
 - **Request (`authdto.RegisterRequest`):** `name` (required), `email` (required, email),
   `password` (required, min 6), `organization_code` (required, mis. `"pln"`).
 - **Bisnis logic:**
-  1. Bind + validasi (gagal → `400 VALIDATION_ERROR`).
-  2. `ExistsByEmail` (scope aktif/non-deleted) — jika ada → `409 EMAIL_TAKEN`.
-  3. **Hash password (bcrypt)** sebelum simpan — plaintext tak pernah tersimpan.
-  4. `Create` user (id auto, `organization_code` dari payload).
-  5. Balikan `UserResponse` — **password tak pernah** ikut (`json:"-"`).
+  1. Middleware `JWTAuth` + `RequireRole(admin)` — gerbang sebelum controller.
+  2. Bind + validasi (gagal → `400 VALIDATION_ERROR`).
+  3. `ExistsByEmail` (scope aktif/non-deleted) — jika ada → `409 EMAIL_TAKEN`.
+  4. **Hash password (bcrypt)** sebelum simpan.
+  5. `Create` user dengan **role selalu `user`** (`organization_code` dari payload; admin global
+     boleh buat user di org mana pun).
+  6. Balikan `UserResponse` (memuat `role`) — **password tak pernah** ikut.
 - **Aturan data:** email unik **hanya di antara user aktif** (partial unique index
-  `idx_users_email_active WHERE deleted_at IS NULL`) → email milik user yang sudah soft-deleted
-  boleh dipakai lagi.
-- **Response:** `201` (data `UserResponse`) · `400 VALIDATION_ERROR` · `409 EMAIL_TAKEN` ·
-  `500 INTERNAL_ERROR`.
-- **Logging:** INFO `register: attempt/success` (email, org) · WARN duplikat · ERROR hash/create.
+  `idx_users_email_active`) → email user yang sudah soft-deleted boleh dipakai lagi.
+- **Response:** `201` (data `UserResponse`) · `400 VALIDATION_ERROR` · `401 UNAUTHORIZED` ·
+  `403 FORBIDDEN_ROLE` · `409 EMAIL_TAKEN` · `500 INTERNAL_ERROR`.
+- **Logging:** WARN role check gagal · INFO `register: attempt/success` · WARN duplikat.
 
 ### POST `/auth/login`
 - **Tujuan:** autentikasi → terbitkan token. **Auth:** publik.
@@ -98,9 +117,9 @@ Base URL: `http://localhost:8080/api/v1` · Envelope: `internal/response` (`Base
 
 ## Module: user  🔒 (semua butuh Bearer access token)
 
-**Tenant isolation (aturan lintas semua endpoint):** operasi hanya boleh menyentuh user dalam
-**organizationCode yang sama** dengan token pemanggil. Target beda org → `403
-FORBIDDEN_ORGANIZATION`. (Belum ada role admin; semua user setara dalam org-nya.)
+**Tenant isolation:** untuk role `user`, operasi hanya boleh menyentuh user dalam
+**organizationCode yang sama** → beda org `403 FORBIDDEN_ORGANIZATION`. Role **`admin` bypass**
+(global, boleh lintas org). **DELETE khusus admin** (non-admin `403 FORBIDDEN_ROLE`).
 
 ### GET `/users/me`
 - **Tujuan:** profil user yang sedang login (id diambil dari token).
@@ -108,23 +127,25 @@ FORBIDDEN_ORGANIZATION`. (Belum ada role admin; semua user setara dalam org-nya.
 - **Response:** `200` (data `UserResponse`) · `401 UNAUTHORIZED` · `404 USER_NOT_FOUND`.
 
 ### GET `/users/{id}`
-- **Tujuan:** ambil user by id, dibatasi org pemanggil.
-- **Bisnis logic:** load user; jika tak ada → `404`; jika `org != actorOrg` → `403`.
+- **Tujuan:** ambil user by id. **Auth:** Bearer (user: se-org, admin: global).
+- **Bisnis logic:** load user; tak ada → `404`; jika non-admin & `org != actorOrg` → `403`.
 - **Response:** `200` · `400 VALIDATION_ERROR` (id invalid) · `401` · `403` · `404`.
 
 ### PUT `/users/{id}`
-- **Tujuan:** update `name` dan/atau `password`. **Email & organizationCode immutable**
-  (identitas & tenant tak boleh berpindah).
+- **Tujuan:** update `name` dan/atau `password`. **Email, organizationCode, & role immutable**
+  lewat endpoint ini. **Auth:** Bearer (user: se-org, admin: global).
 - **Request (`userdto.UpdateUserRequest`):** `name?`, `password?` (hanya field terisi diproses;
   password baru di-**bcrypt**).
-- **Bisnis logic:** fetch tenant-scoped (404/403) → set field → `Save`.
+- **Bisnis logic:** fetch scoped (admin bypass tenant) → set field → `Save`.
 - **Response:** `200` (data `UserResponse`) · `400` · `401` · `403` · `404`.
 
-### DELETE `/users/{id}`
-- **Tujuan:** **soft delete** (set `deleted_at`, baris tetap ada).
-- **Bisnis logic:** fetch tenant-scoped (404/403) → `Delete` (GORM soft delete).
+### DELETE `/users/{id}`  🔒 admin only
+- **Tujuan:** **soft delete** (set `deleted_at`, baris tetap ada). **Auth:** **admin** (global).
+- **Bisnis logic:** `RequireRole(admin)` (non-admin → `403 FORBIDDEN_ROLE`) → load user
+  (`404` bila tak ada) → `Delete` (GORM soft delete). Admin global: tak ada batas org.
 - **Efek:** user tak lagi bisa login/di-query; email-nya bebas dipakai user baru.
-- **Response:** `200` (message `"user deleted"`) · `401` · `403` · `404`.
+- **Response:** `200` (message `"user deleted"`) · `401 UNAUTHORIZED` · `403 FORBIDDEN_ROLE` ·
+  `404 USER_NOT_FOUND`.
 
 ---
 

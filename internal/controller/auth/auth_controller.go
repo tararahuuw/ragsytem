@@ -24,14 +24,17 @@ func NewController(svc authsvc.Service) *Controller {
 
 // Register godoc
 //
-//	@Summary		Register a new user
-//	@Description	Creates a user with an organizationCode (bcrypt-hashed password).
+//	@Summary		Register a new user (admin only)
+//	@Description	Admin-only. Creates a user (role always "user") in the given organizationCode, bcrypt-hashed.
 //	@Tags			auth
 //	@Accept			json
 //	@Produce		json
+//	@Security		BearerAuth
 //	@Param			payload	body		authdto.RegisterRequest	true	"Registration payload"
 //	@Success		201		{object}	response.BaseResponse{data=user.UserResponse}
 //	@Failure		400		{object}	response.ErrorResponse
+//	@Failure		401		{object}	response.ErrorResponse
+//	@Failure		403		{object}	response.ErrorResponse
 //	@Failure		409		{object}	response.ErrorResponse
 //	@Router			/auth/register [post]
 func (c *Controller) Register(ctx *gin.Context) {

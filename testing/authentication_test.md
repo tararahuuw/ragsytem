@@ -1,111 +1,112 @@
-# Authentication & User API Test Playbook
+# Authentication & User API Test Playbook (RBAC)
 
-**Module:** auth (register, login, refresh) + user (me, get, update, soft delete) — JWT, multi-tenant.
+**Module:** auth (register[admin], login, refresh) + user (me, get, update, soft-delete[admin]).
+JWT + multi-tenant + **RBAC (admin/user)**.
 **Status:** ✅ READY
 
 ## Environment
 - Base URL: `http://localhost:8080/api/v1`
 - Prasyarat: server jalan (`make run`), PostgreSQL up, tabel `users` termigrasi.
-- Data unik per run: pakai email ber-timestamp agar bisa diulang.
+
+## Bootstrap admin (WAJIB — sekali per DB)
+Register kini **admin-only**, jadi admin pertama disiapkan **manual via SQL** (promote user yang
+sudah ada; kalau DB kosong, insert dulu satu user lalu promote):
+```bash
+# promote user existing menjadi admin
+psql ragsystem -c "UPDATE users SET role='admin' WHERE email='<email_user_existing>';"
+# verifikasi
+psql ragsystem -c "SELECT id,email,role FROM users WHERE role='admin';"
+```
+Catat kredensial admin ini (email + password aslinya) untuk login di TC-00.
 
 ## Variables
 | Nama | Sumber |
 |---|---|
-| `BASE_URL` | `http://localhost:8080/api/v1` |
-| `EMAIL` | `qa+$(date +%s)@pln.co.id` |
-| `EMAIL2` | `qa2+$(date +%s)@icon.id` (org berbeda) |
-| `PASSWORD` | `secret123` |
-| `ACCESS` / `REFRESH` | di-capture dari Login |
-| `UID` / `UID2` | id user hasil register |
-
-> Setup:
-> ```bash
-> BASE_URL=http://localhost:8080/api/v1
-> EMAIL="qa+$(date +%s)@pln.co.id"; EMAIL2="qa2+$(date +%s)@icon.id"; PASSWORD=secret123
-> ```
+| `ADMIN_EMAIL` / `ADMIN_PASS` | akun yang di-promote via SQL |
+| `ADMIN_TOKEN` | access token hasil login admin (TC-00) |
+| `USER_EMAIL` | `qa+$(date +%s)@pln.co.id` (dibuat admin) |
+| `USER_TOKEN` | access token user biasa |
+| `UID` | id user hasil register |
 
 ---
 
 ## Test Cases
 
-### TC-01 — Register (org pln) → 201
-```bash
-curl -s -i -X POST "$BASE_URL/auth/register" -H "Content-Type: application/json" \
-  -d "{\"name\":\"QA\",\"email\":\"$EMAIL\",\"password\":\"$PASSWORD\",\"organization_code\":\"pln\"}"
-```
-- **Capture:** `data.id` → `UID`.
-- **Ekspektasi:** `201`; `data.organization_code=pln`; **password tidak** muncul di body.
-
-### TC-02 — Register email duplikat → 409
-Ulangi TC-01 dengan `$EMAIL` sama. **Ekspektasi:** `409` code `EMAIL_TAKEN`; bukan 5xx.
-
-### TC-03 — Register validasi → 400
-Body `{"name":"x","email":"bad","password":"1","organization_code":""}`.
-**Ekspektasi:** `400` code `VALIDATION_ERROR`.
-
-### TC-04 — Login → 200 + token
+### TC-00 — Login admin → 200 (bootstrap token)
 ```bash
 curl -s -X POST "$BASE_URL/auth/login" -H "Content-Type: application/json" \
-  -d "{\"email\":\"$EMAIL\",\"password\":\"$PASSWORD\"}"
+  -d "{\"email\":\"$ADMIN_EMAIL\",\"password\":\"$ADMIN_PASS\"}"
 ```
-- **Capture:** `data.access_token` → `ACCESS`, `data.refresh_token` → `REFRESH`.
-- **Ekspektasi:** `200`; kedua token non-kosong; `expires_in` > 0.
-- **Cek claim:** decode bagian payload access token → memuat `organization_code:"pln"`.
+- **Capture:** `data.access_token` → `ADMIN_TOKEN`.
+- **Ekspektasi:** `200`; decode payload → `role:"admin"`.
 
-### TC-05 — Login password salah → 401
-Body password salah. **Ekspektasi:** `401` code `INVALID_CREDENTIALS` (generik).
-
-### TC-06 — /users/me tanpa token → 401
+### TC-01 — Register tanpa token → 401
 ```bash
-curl -s -o /dev/null -w "%{http_code}\n" "$BASE_URL/users/me"
+curl -s -o /dev/null -w "%{http_code}\n" -X POST "$BASE_URL/auth/register" \
+  -H "Content-Type: application/json" \
+  -d "{\"name\":\"QA\",\"email\":\"$USER_EMAIL\",\"password\":\"secret123\",\"organization_code\":\"pln\"}"
 ```
-**Ekspektasi:** `401` code `UNAUTHORIZED`.
+**Ekspektasi:** `401 UNAUTHORIZED`.
 
-### TC-07 — /users/me dengan token → 200
+### TC-02 — Register oleh admin → 201 (role selalu user)
+Sama seperti TC-01 + header `Authorization: Bearer $ADMIN_TOKEN`.
+- **Capture:** `data.id` → `UID`.
+- **Ekspektasi:** `201`; `data.role="user"`; password tak muncul.
+
+### TC-03 — Register email duplikat (admin) → 409
+Ulangi TC-02 email sama. **Ekspektasi:** `409 EMAIL_TAKEN`.
+
+### TC-04 — Register validasi (admin) → 400
+Body email invalid / password pendek / org kosong. **Ekspektasi:** `400 VALIDATION_ERROR`.
+
+### TC-05 — Login user baru → 200
+Login `$USER_EMAIL` / `secret123`. **Capture:** `data.access_token` → `USER_TOKEN`.
+Decode payload → `role:"user"`.
+
+### TC-06 — Register oleh user biasa → 403
+Header `Authorization: Bearer $USER_TOKEN`. **Ekspektasi:** `403 FORBIDDEN_ROLE`
+(RBAC: hanya admin boleh register).
+
+### TC-07 — /users/me (user token) → 200
 ```bash
-curl -s "$BASE_URL/users/me" -H "Authorization: Bearer $ACCESS"
+curl -s "$BASE_URL/users/me" -H "Authorization: Bearer $USER_TOKEN"
 ```
-**Ekspektasi:** `200`; `data.email=$EMAIL`, `data.organization_code=pln`.
+**Ekspektasi:** `200`; `data.email=$USER_EMAIL`, `data.role="user"`.
 
-### TC-08 — Tenant isolation → 403
-Register user kedua di org lain (`icon`), dapatkan `UID2`. Lalu akses lintas-org:
+### TC-08 — /users/me tanpa token → 401.
+
+### TC-09 — Update user (user token, self org) → 200
+`PUT /users/$UID` body `{"name":"QA Updated"}`. **Ekspektasi:** `200`; name berubah.
+
+### TC-10 — Delete oleh user biasa → 403
 ```bash
-curl -s -o /dev/null -w "%{http_code}\n" "$BASE_URL/users/$UID2" -H "Authorization: Bearer $ACCESS"
+curl -s -o /dev/null -w "%{http_code}\n" -X DELETE "$BASE_URL/users/$UID" -H "Authorization: Bearer $USER_TOKEN"
 ```
-**Ekspektasi:** `403` code `FORBIDDEN_ORGANIZATION` (user pln tak boleh lihat user icon).
+**Ekspektasi:** `403 FORBIDDEN_ROLE` (delete admin-only).
 
-### TC-09 — Update user → 200
+### TC-11 — Delete oleh admin → 200 (soft delete)
 ```bash
-curl -s -X PUT "$BASE_URL/users/$UID" -H "Authorization: Bearer $ACCESS" \
-  -H "Content-Type: application/json" -d '{"name":"QA Updated"}'
-```
-**Ekspektasi:** `200`; `data.name=QA Updated`; email/org tak berubah.
-
-### TC-10 — Refresh → 200
-```bash
-curl -s -o /dev/null -w "%{http_code}\n" -X POST "$BASE_URL/auth/refresh" \
-  -H "Content-Type: application/json" -d "{\"refresh_token\":\"$REFRESH\"}"
-```
-**Ekspektasi:** `200` + token pair baru.
-
-### TC-11 — Refresh pakai ACCESS token → 401
-Kirim `$ACCESS` sebagai `refresh_token`. **Ekspektasi:** `401 INVALID_REFRESH_TOKEN`
-(type guard: access token bukan refresh).
-
-### TC-12 — Soft delete → 200, lalu efeknya
-```bash
-curl -s -o /dev/null -w "%{http_code}\n" -X DELETE "$BASE_URL/users/$UID" -H "Authorization: Bearer $ACCESS"
+curl -s -X DELETE "$BASE_URL/users/$UID" -H "Authorization: Bearer $ADMIN_TOKEN"
 ```
 **Ekspektasi:** `200`. Lanjutan:
-- `GET /users/$UID` (token masih ada) → `404 USER_NOT_FOUND`.
-- Login `$EMAIL` lagi → `401` (user terhapus tak ditemukan).
+- `GET /users/$UID` (admin) → `404 USER_NOT_FOUND`.
+- Login `$USER_EMAIL` → `401` (user terhapus).
+- DB: baris `id=$UID` masih ada, `deleted_at` terisi.
+
+### TC-12 — Admin global (lintas org) → 200
+Register user org `icon` (via admin), lalu admin akses `GET /users/{id_icon}`.
+**Ekspektasi:** `200` (admin bypass tenant; **bukan** 403). Bandingkan: user `pln` akses user
+`icon` → `403 FORBIDDEN_ORGANIZATION`.
+
+### TC-13 — Refresh → 200; refresh pakai access token → 401
+`POST /auth/refresh` dengan refresh token → `200`; dengan access token → `401 INVALID_REFRESH_TOKEN`.
 
 ---
 
 ## Teardown (opsional)
 ```sql
-DELETE FROM users WHERE email LIKE 'qa%@%';   -- hard delete data uji
+DELETE FROM users WHERE email LIKE 'qa%@%';
 ```
 
 ## Roadmap (PENDING)
-- Forgot/reset password · role/authorization (admin) · rotasi/revoke refresh token.
+- Endpoint ubah role (promote/demote via API) · forgot/reset password · revoke refresh token.

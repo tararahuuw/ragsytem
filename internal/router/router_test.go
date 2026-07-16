@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/gin-gonic/gin"
@@ -12,6 +13,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/tararahuuw/ragsytem/internal/config"
+	appjwt "github.com/tararahuuw/ragsytem/internal/jwt"
 	"github.com/tararahuuw/ragsytem/internal/router"
 )
 
@@ -98,6 +100,38 @@ func TestUsers_RequireAuth(t *testing.T) {
 		r.ServeHTTP(w, req)
 		if w.Code != http.StatusUnauthorized {
 			t.Fatalf("%s %s: expected 401 without token, got %d", tc.method, tc.path, w.Code)
+		}
+	}
+}
+
+// Register and soft-delete are admin-only: unauthenticated -> 401, non-admin
+// (user role) -> 403. (These abort in middleware before any DB access.)
+func TestRBAC_AdminOnlyRoutes(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	secret := "test-secret"
+	gdb, _ := newMockGorm(t)
+	r := router.New(&config.Config{AppEnv: "test", JWTSecret: secret}, gdb)
+
+	userTok, _ := appjwt.Generate(secret, 1, "u@x.com", "pln", "user", appjwt.TypeAccess, time.Minute)
+
+	cases := []struct {
+		name, method, path, auth string
+		want                     int
+	}{
+		{"register no token", http.MethodPost, "/api/v1/auth/register", "", http.StatusUnauthorized},
+		{"register user role", http.MethodPost, "/api/v1/auth/register", "Bearer " + userTok, http.StatusForbidden},
+		{"delete no token", http.MethodDelete, "/api/v1/users/1", "", http.StatusUnauthorized},
+		{"delete user role", http.MethodDelete, "/api/v1/users/1", "Bearer " + userTok, http.StatusForbidden},
+	}
+	for _, tc := range cases {
+		w := httptest.NewRecorder()
+		req := httptest.NewRequest(tc.method, tc.path, nil)
+		if tc.auth != "" {
+			req.Header.Set("Authorization", tc.auth)
+		}
+		r.ServeHTTP(w, req)
+		if w.Code != tc.want {
+			t.Fatalf("%s: expected %d, got %d", tc.name, tc.want, w.Code)
 		}
 	}
 }

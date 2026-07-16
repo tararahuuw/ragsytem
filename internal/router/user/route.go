@@ -7,6 +7,7 @@ import (
 	"github.com/tararahuuw/ragsytem/internal/config"
 	userctrl "github.com/tararahuuw/ragsytem/internal/controller/user"
 	"github.com/tararahuuw/ragsytem/internal/middleware"
+	"github.com/tararahuuw/ragsytem/internal/rbac"
 	userrepo "github.com/tararahuuw/ragsytem/internal/repository/user"
 	usersvc "github.com/tararahuuw/ragsytem/internal/service/user"
 )
@@ -25,6 +26,7 @@ func Register(rg *gin.RouterGroup, cfg *config.Config, db *gorm.DB) {
 		group.GET("/me", ctrl.Me)
 		group.GET("/:id", ctrl.GetByID)
 		group.PUT("/:id", ctrl.Update)
-		group.DELETE("/:id", ctrl.Delete)
+		// Admin-only: soft delete.
+		group.DELETE("/:id", middleware.RequireRole(rbac.RoleAdmin), ctrl.Delete)
 	}
 }

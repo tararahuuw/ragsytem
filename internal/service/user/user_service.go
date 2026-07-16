@@ -9,6 +9,7 @@ import (
 	userdto "github.com/tararahuuw/ragsytem/internal/dto/user"
 	"github.com/tararahuuw/ragsytem/internal/logger"
 	usermodel "github.com/tararahuuw/ragsytem/internal/model/user"
+	"github.com/tararahuuw/ragsytem/internal/rbac"
 	userrepo "github.com/tararahuuw/ragsytem/internal/repository/user"
 )
 
@@ -18,13 +19,13 @@ var (
 	ErrForbiddenOrg = errors.New("forbidden: user belongs to a different organization")
 )
 
-// Service holds user-management business logic. Every operation is scoped to
-// the actor's organizationCode (tenant isolation): a caller may only read/modify
-// users within their own organization.
+// Service holds user-management business logic. Non-admin callers are scoped to
+// their own organizationCode (tenant isolation); admins (super-admin) bypass the
+// org check and may act across organizations.
 type Service interface {
-	GetByID(ctx context.Context, id uint, actorOrg string) (userdto.UserResponse, error)
-	Update(ctx context.Context, id uint, actorOrg string, req userdto.UpdateUserRequest) (userdto.UserResponse, error)
-	SoftDelete(ctx context.Context, id uint, actorOrg string) error
+	GetByID(ctx context.Context, id uint, actorOrg, actorRole string) (userdto.UserResponse, error)
+	Update(ctx context.Context, id uint, actorOrg, actorRole string, req userdto.UpdateUserRequest) (userdto.UserResponse, error)
+	SoftDelete(ctx context.Context, id uint, actorOrg, actorRole string) error
 }
 
 type service struct {
@@ -36,8 +37,9 @@ func NewService(repo userrepo.Repository) Service {
 	return &service{repo: repo}
 }
 
-// fetchScoped loads a user and enforces tenant isolation against actorOrg.
-func (s *service) fetchScoped(ctx context.Context, id uint, actorOrg string) (*usermodel.User, error) {
+// fetchScoped loads a user and enforces tenant isolation unless the actor is an
+// admin (super-admin bypasses the org check).
+func (s *service) fetchScoped(ctx context.Context, id uint, actorOrg, actorRole string) (*usermodel.User, error) {
 	log := logger.FromContext(ctx)
 	u, err := s.repo.FindByID(ctx, id)
 	if err != nil {
@@ -48,7 +50,7 @@ func (s *service) fetchScoped(ctx context.Context, id uint, actorOrg string) (*u
 		log.Warn("user: not found", "user_id", id)
 		return nil, ErrUserNotFound
 	}
-	if u.OrganizationCode != actorOrg {
+	if actorRole != rbac.RoleAdmin && u.OrganizationCode != actorOrg {
 		log.Warn("user: cross-organization access blocked",
 			"user_id", id, "target_org", u.OrganizationCode, "actor_org", actorOrg)
 		return nil, ErrForbiddenOrg
@@ -56,18 +58,18 @@ func (s *service) fetchScoped(ctx context.Context, id uint, actorOrg string) (*u
 	return u, nil
 }
 
-func (s *service) GetByID(ctx context.Context, id uint, actorOrg string) (userdto.UserResponse, error) {
-	u, err := s.fetchScoped(ctx, id, actorOrg)
+func (s *service) GetByID(ctx context.Context, id uint, actorOrg, actorRole string) (userdto.UserResponse, error) {
+	u, err := s.fetchScoped(ctx, id, actorOrg, actorRole)
 	if err != nil {
 		return userdto.UserResponse{}, err
 	}
 	return toUserResponse(u), nil
 }
 
-func (s *service) Update(ctx context.Context, id uint, actorOrg string, req userdto.UpdateUserRequest) (userdto.UserResponse, error) {
+func (s *service) Update(ctx context.Context, id uint, actorOrg, actorRole string, req userdto.UpdateUserRequest) (userdto.UserResponse, error) {
 	log := logger.FromContext(ctx)
 
-	u, err := s.fetchScoped(ctx, id, actorOrg)
+	u, err := s.fetchScoped(ctx, id, actorOrg, actorRole)
 	if err != nil {
 		return userdto.UserResponse{}, err
 	}
@@ -93,10 +95,10 @@ func (s *service) Update(ctx context.Context, id uint, actorOrg string, req user
 	return toUserResponse(u), nil
 }
 
-func (s *service) SoftDelete(ctx context.Context, id uint, actorOrg string) error {
+func (s *service) SoftDelete(ctx context.Context, id uint, actorOrg, actorRole string) error {
 	log := logger.FromContext(ctx)
 
-	u, err := s.fetchScoped(ctx, id, actorOrg)
+	u, err := s.fetchScoped(ctx, id, actorOrg, actorRole)
 	if err != nil {
 		return err
 	}
@@ -115,5 +117,6 @@ func toUserResponse(u *usermodel.User) userdto.UserResponse {
 		Name:             u.Name,
 		Email:            u.Email,
 		OrganizationCode: u.OrganizationCode,
+		Role:             u.Role,
 	}
 }

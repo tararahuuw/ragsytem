@@ -41,7 +41,7 @@ func TestJWTAuth_MissingHeader(t *testing.T) {
 func TestJWTAuth_RefreshTokenRejected(t *testing.T) {
 	secret := "s"
 	// A refresh token must not be accepted as an access token.
-	tok, _ := appjwt.Generate(secret, 1, "a@b.com", "pln", appjwt.TypeRefresh, time.Minute)
+	tok, _ := appjwt.Generate(secret, 1, "a@b.com", "pln", "user", appjwt.TypeRefresh, time.Minute)
 	r := newProtectedRouter(secret)
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/x/ping", nil)
@@ -54,7 +54,7 @@ func TestJWTAuth_RefreshTokenRejected(t *testing.T) {
 
 func TestJWTAuth_ValidAccessToken(t *testing.T) {
 	secret := "s"
-	tok, _ := appjwt.Generate(secret, 7, "a@b.com", "pln", appjwt.TypeAccess, time.Minute)
+	tok, _ := appjwt.Generate(secret, 7, "a@b.com", "pln", "user", appjwt.TypeAccess, time.Minute)
 	r := newProtectedRouter(secret)
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/x/ping", nil)
@@ -66,5 +66,32 @@ func TestJWTAuth_ValidAccessToken(t *testing.T) {
 	// organizationCode from the token must be available to the handler.
 	if body := w.Body.String(); !strings.Contains(body, `"org":"pln"`) {
 		t.Fatalf("expected org=pln in context, got %s", body)
+	}
+}
+
+// RequireRole must allow the matching role and reject others with 403.
+func TestRequireRole(t *testing.T) {
+	secret := "s"
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	r.Use(middleware.RequestID())
+	grp := r.Group("/admin")
+	grp.Use(middleware.JWTAuth(&config.Config{JWTSecret: secret}), middleware.RequireRole("admin"))
+	grp.GET("/ping", func(c *gin.Context) { c.Status(http.StatusOK) })
+
+	call := func(role string) int {
+		tok, _ := appjwt.Generate(secret, 1, "a@b.com", "pln", role, appjwt.TypeAccess, time.Minute)
+		w := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/admin/ping", nil)
+		req.Header.Set("Authorization", "Bearer "+tok)
+		r.ServeHTTP(w, req)
+		return w.Code
+	}
+
+	if code := call("admin"); code != http.StatusOK {
+		t.Fatalf("admin: expected 200, got %d", code)
+	}
+	if code := call("user"); code != http.StatusForbidden {
+		t.Fatalf("user: expected 403, got %d", code)
 	}
 }

@@ -46,6 +46,10 @@ func Migrate(db *gorm.DB) error {
 	if err := db.AutoMigrate(&usermodel.User{}); err != nil {
 		return err
 	}
+	// Backfill role for rows created before the column existed.
+	if err := db.Exec(`UPDATE users SET role = 'user' WHERE role IS NULL OR role = ''`).Error; err != nil {
+		return err
+	}
 	// Partial unique index: email must be unique among ACTIVE (non-deleted)
 	// users, so a soft-deleted email can be reused on re-registration.
 	return db.Exec(

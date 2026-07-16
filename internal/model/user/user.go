@@ -16,6 +16,7 @@ type User struct {
 	Email            string         `gorm:"index" json:"email"`
 	Password         string         `json:"-"` // bcrypt hash, never serialized
 	OrganizationCode string         `gorm:"index" json:"organization_code"`
+	Role             string         `gorm:"index;default:user" json:"role"`
 	CreatedAt        time.Time      `json:"created_at"`
 	UpdatedAt        time.Time      `json:"updated_at"`
 	DeletedAt        gorm.DeletedAt `gorm:"index" json:"-"`
