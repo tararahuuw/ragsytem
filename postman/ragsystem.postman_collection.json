@@ -1,0 +1,182 @@
+{
+  "info": {
+    "_postman_id": "b1a7f0c2-0001-4a10-9e00-ragsystemcol01",
+    "name": "RAG System API",
+    "description": "Koleksi endpoint RAG System backend (Gin + GORM, JWT). Import bersama environment `ragsystem.local.postman_environment.json`. Login menyimpan access_token & refresh_token ke environment; endpoint /users memakai Bearer {{access_token}}.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "health",
+      "item": [
+        {
+          "name": "Health check",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200 or 503', function () { pm.expect([200,503]).to.include(pm.response.code); });",
+                  "pm.test('no 5xx', function () { pm.expect(pm.response.code).to.be.below(500); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{base_url}}/healthz", "host": ["{{base_url}}"], "path": ["healthz"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "auth",
+      "item": [
+        {
+          "name": "Register",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 201 or 409', function () { pm.expect([201,409]).to.include(pm.response.code); });",
+                  "pm.test('password not returned', function () { pm.expect(pm.response.text()).to.not.include('\"password\"'); });",
+                  "var j={}; try{ j=pm.response.json(); }catch(e){}",
+                  "if (j.data && j.data.id) { pm.environment.set('user_id', j.data.id); }"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"{{name}}\",\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\",\n  \"organization_code\": \"{{organization_code}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{base_url}}/auth/register", "host": ["{{base_url}}"], "path": ["auth", "register"] },
+            "description": "Daftar user baru (+organizationCode). 201 sukses, 409 email sudah ada, 400 payload invalid."
+          }
+        },
+        {
+          "name": "Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', function () { pm.response.to.have.status(200); });",
+                  "var j={}; try{ j=pm.response.json(); }catch(e){}",
+                  "if (j.data && j.data.access_token) {",
+                  "  pm.environment.set('access_token', j.data.access_token);",
+                  "  pm.environment.set('refresh_token', j.data.refresh_token);",
+                  "  pm.test('tokens captured', function () { pm.expect(j.data.access_token).to.be.a('string').and.not.empty; });",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{base_url}}/auth/login", "host": ["{{base_url}}"], "path": ["auth", "login"] },
+            "description": "Login. 200 + {access_token, refresh_token}. Token disimpan otomatis ke environment."
+          }
+        },
+        {
+          "name": "Refresh",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', function () { pm.response.to.have.status(200); });",
+                  "var j={}; try{ j=pm.response.json(); }catch(e){}",
+                  "if (j.data && j.data.access_token) {",
+                  "  pm.environment.set('access_token', j.data.access_token);",
+                  "  pm.environment.set('refresh_token', j.data.refresh_token);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refresh_token\": \"{{refresh_token}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{base_url}}/auth/refresh", "host": ["{{base_url}}"], "path": ["auth", "refresh"] },
+            "description": "Tukar refresh token → token pair baru. 401 jika token invalid / bukan tipe refresh."
+          }
+        }
+      ]
+    },
+    {
+      "name": "user",
+      "description": "Semua endpoint butuh Bearer {{access_token}} (jalankan Login dulu).",
+      "item": [
+        {
+          "name": "Me",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }],
+            "url": { "raw": "{{base_url}}/users/me", "host": ["{{base_url}}"], "path": ["users", "me"] },
+            "description": "Profil user dari token. 401 tanpa token."
+          }
+        },
+        {
+          "name": "Get by ID",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }],
+            "url": { "raw": "{{base_url}}/users/{{user_id}}", "host": ["{{base_url}}"], "path": ["users", "{{user_id}}"] },
+            "description": "Ambil user by id (tenant-scoped). 403 jika beda organization, 404 jika tak ada."
+          }
+        },
+        {
+          "name": "Update",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{access_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Updated Name\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{base_url}}/users/{{user_id}}", "host": ["{{base_url}}"], "path": ["users", "{{user_id}}"] },
+            "description": "Update name/password (tenant-scoped). Email & organizationCode immutable."
+          }
+        },
+        {
+          "name": "Delete (soft)",
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }],
+            "url": { "raw": "{{base_url}}/users/{{user_id}}", "host": ["{{base_url}}"], "path": ["users", "{{user_id}}"] },
+            "description": "Soft delete (set deleted_at). User tak bisa login lagi; email bebas dipakai ulang."
+          }
+        }
+      ]
+    }
+  ],
+  "variable": [
+    { "key": "base_url", "value": "http://localhost:8080/api/v1", "type": "string" }
+  ]
+}

@@ -56,19 +56,23 @@ ragsytem/
 │   ├── database/              # koneksi GORM + Migrate()
 │   ├── logger/                # setup slog + helper request-scoped (FromContext)
 │   ├── response/              # BaseResponse, ErrorResponse + helper (Success/Error/...)
-│   ├── middleware/            # cors, request_id, access_log (slog), recovery (panic→500)
+│   ├── jwt/                   # generate/parse JWT (claims: user_id, email, organization_code, token_type)
+│   ├── middleware/            # cors, request_id, access_log, recovery, auth (JWTAuth + CurrentOrgCode/UserID)
 │   ├── router/                # router.go (aggregator) + <module>/route.go
-│   │   ├── health/route.go    #   Register(v1, db): wiring + mount route health
-│   │   └── auth/route.go      #   Register(v1, db): wiring + mount route auth
+│   │   ├── health/route.go    #   Register(v1, db)
+│   │   ├── auth/route.go      #   Register(v1, cfg, db) — public
+│   │   └── user/route.go      #   Register(v1, cfg, db) — protected (JWTAuth)
 │   ├── controller/<module>/   # package <module> → Controller, NewController
-│   │   ├── health/  · auth/
+│   │   ├── health/  · auth/  · user/
 │   ├── service/<module>/      # package <module> → Service, NewService, ErrXxx
-│   │   ├── health/  · auth/
-│   ├── repository/<module>/   # package <module> → Repository, NewRepository
-│   │   ├── health/  · auth/   #   auth = in-memory dummy
-│   ├── model/<module>/        # entity per-module: model/auth/user.go (package auth)
-│   └── dto/<module>/          # DTO per-module: dto/auth/, dto/health/ (package <module>)
+│   │   ├── health/  · auth/  · user/
+│   ├── repository/<module>/   # package <module> → Repository, NewRepository(db)
+│   │   ├── health/  · user/   #   auth pakai repository/user (GORM, soft delete)
+│   ├── model/<module>/        # entity per-module: model/user/user.go (package user)
+│   └── dto/<module>/          # DTO per-module: dto/auth/, dto/user/, dto/health/
 ├── testing/                   # playbook test API (.md) per rumpun endpoint
+├── postman/                   # collection + environment (import-ready) — sinkron dgn API
+├── ROUTES.md                  # katalog bisnis logic per-endpoint (living doc)
 ├── docs/                      # GENERATED oleh swag (jangan edit manual)
 ├── db/migrations/             # (opsional) migrasi SQL manual bila diperlukan
 ├── docker-compose.yaml        # PostgreSQL lokal
@@ -211,7 +215,8 @@ Misal menambah domain `document` (ikuti pola module `auth`):
    wiring repo→service→controller + mount route. Lalu daftarkan di `internal/router/router.go`:
    `documentroute.Register(v1, db)` (import alias `documentroute`).
 8. **Swagger** — `make swag`. **Docs bisnis** — update `ROUTES.md` (bisnis logic per-endpoint).
-   **Testing** — buat `testing/document_test.md`. Lalu `make run`.
+   **Postman** — update `postman/*.json` (collection + environment). **Testing** — buat
+   `testing/document_test.md`. Lalu `make run`.
 
 Ikuti module `auth` (register/login) sebagai contoh lengkap end-to-end: foldering per-module,
 response envelope, dan logging tracing.
@@ -251,6 +256,8 @@ Semua via environment variable (lihat `.env.example`). Default aman untuk local.
 | `APP_ENV` | development | `development`/`staging`/`production` (prod → gin ReleaseMode + log Warn) |
 | `SERVER_HOST` / `SERVER_PORT` | 0.0.0.0 / 8080 | bind server |
 | `DB_HOST`/`DB_PORT`/`DB_USER`/`DB_PASSWORD`/`DB_NAME`/`DB_SSLMODE` | localhost/5432/postgres/postgres/ragsystem/disable | PostgreSQL |
+| `JWT_SECRET` | change-me-in-production | kunci tanda tangan JWT (HS256) |
+| `JWT_ACCESS_TTL` / `JWT_REFRESH_TTL` | 15m / 168h | umur access & refresh token (durasi Go atau detik) |
 
 ---
 
@@ -272,9 +279,12 @@ make run              # server :8080
 ## 8. Status & rencana
 
 - [x] Scaffold layered (Gin + GORM), health slice, Swagger, Docker, Makefile.
-- [x] Foldering per-module di tiap layer (router/controller/service/repository/<module>/).
-- [x] Auth **dummy** (register + login, in-memory) + playbook testing READY.
-- [ ] Auth real: persistensi GORM (`users`), hash password (bcrypt), JWT, middleware otorisasi.
+- [x] Foldering per-module di tiap layer (router/controller/service/repository/model/dto/<module>/).
+- [x] **Auth real**: register/login/refresh, GORM `users` (soft delete), bcrypt, **JWT
+      access+refresh** dengan claim `organization_code`, middleware `JWTAuth`.
+- [x] **User management**: `/users/me`, GET/PUT/DELETE `/users/{id}` (soft delete),
+      **isolasi tenant** per organizationCode.
+- [ ] Auth lanjutan: role/authorization (admin), forgot/reset password, revoke refresh token.
 - [ ] Domain `document` + upload file.
 - [ ] Ingestion (ekstraksi teks / chunking).
 - [ ] Integrasi mesin embedding + vector store.
@@ -304,3 +314,16 @@ make run              # server :8080
   `gin.Recovery()` default dengan `middleware.Recovery()` custom: recover panic → log Error
   (stack + request_id) → balas `response.Error` 500 standar (tak bocor stack ke client). Tambah
   `recovery_test.go`. Disiplin error-as-value + wrap `%w` + wajib log tiap cabang error.
+- **2026-07-16** — Tambah `ROUTES.md` (katalog bisnis logic per-endpoint) + folder `postman/`
+  (collection v2.1.0 + environment lokal, login auto-capture token). Skill `rag-dev` dapat
+  Langkah 5c (update ROUTES.md) & 5d (update Postman) untuk API baru / perubahan bisnis logic.
+- **2026-07-16** — **Auth + User (real, via /rag-dev)**. Ganti auth dummy in-memory →
+  persistensi GORM. Module baru: `user` (model/repository/service/controller/router) + `auth`
+  di-refactor pakai `repository/user`. Tambah `internal/jwt` (HS256, claim `organization_code`
+  + `token_type` access/refresh), `middleware.JWTAuth` + helper `CurrentOrgCode/UserID`.
+  Password **bcrypt**. **Soft delete** via `gorm.DeletedAt` + partial unique index
+  `idx_users_email_active` (email unik hanya antar user aktif → boleh reuse setelah delete).
+  Endpoint: `POST /auth/{register,login,refresh}`, `GET /users/me`, `GET|PUT|DELETE /users/{id}`.
+  **Isolasi tenant**: operasi user dibatasi `organizationCode` token (beda org → 403). Config
+  JWT (`JWT_SECRET`, `JWT_ACCESS_TTL`, `JWT_REFRESH_TTL`). Unit test: `internal/jwt`,
+  `middleware` (JWTAuth), router (protected routes butuh token).

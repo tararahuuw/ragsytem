@@ -3,6 +3,8 @@ package config
 import (
 	"fmt"
 	"os"
+	"strconv"
+	"time"
 
 	"github.com/joho/godotenv"
 )
@@ -21,6 +23,10 @@ type Config struct {
 	DBPassword string
 	DBName     string
 	DBSSLMode  string
+
+	JWTSecret     string
+	JWTAccessTTL  time.Duration
+	JWTRefreshTTL time.Duration
 }
 
 // Load reads configuration from the environment. It silently loads a .env file
@@ -40,6 +46,10 @@ func Load() *Config {
 		DBPassword: getEnv("DB_PASSWORD", "postgres"),
 		DBName:     getEnv("DB_NAME", "ragsystem"),
 		DBSSLMode:  getEnv("DB_SSLMODE", "disable"),
+
+		JWTSecret:     getEnv("JWT_SECRET", "change-me-in-production"),
+		JWTAccessTTL:  getEnvDuration("JWT_ACCESS_TTL", 15*time.Minute),
+		JWTRefreshTTL: getEnvDuration("JWT_REFRESH_TTL", 7*24*time.Hour),
 	}
 }
 
@@ -64,6 +74,22 @@ func (c *Config) IsProduction() bool {
 func getEnv(key, fallback string) string {
 	if v, ok := os.LookupEnv(key); ok && v != "" {
 		return v
+	}
+	return fallback
+}
+
+// getEnvDuration accepts either a Go duration string (e.g. "15m", "168h") or a
+// plain integer interpreted as seconds. Falls back on empty/invalid input.
+func getEnvDuration(key string, fallback time.Duration) time.Duration {
+	v, ok := os.LookupEnv(key)
+	if !ok || v == "" {
+		return fallback
+	}
+	if d, err := time.ParseDuration(v); err == nil {
+		return d
+	}
+	if secs, err := strconv.Atoi(v); err == nil {
+		return time.Duration(secs) * time.Second
 	}
 	return fallback
 }

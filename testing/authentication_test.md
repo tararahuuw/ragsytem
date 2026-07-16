@@ -1,113 +1,111 @@
-# Authentication API Test Playbook
+# Authentication & User API Test Playbook
 
-**Module:** Authentication (register, login) — **dummy / in-memory**
-**Status:** ✅ READY (register + login). Endpoint lanjutan (forgot/reset password, `/me`,
-refresh) masih ⏳ PENDING — lihat bagian "Roadmap" di bawah.
-
-> Catatan: implementasi saat ini **DUMMY** — user disimpan in-memory (hilang saat server
-> restart), password belum di-hash, token masih `dummy-token-...` (bukan JWT). Playbook ini
-> menguji kontrak & smoke, bukan keamanan produksi.
+**Module:** auth (register, login, refresh) + user (me, get, update, soft delete) — JWT, multi-tenant.
+**Status:** ✅ READY
 
 ## Environment
 - Base URL: `http://localhost:8080/api/v1`
-- Prasyarat: server jalan (`make run`).
-- Karena store in-memory: jalankan playbook pada instance server yang **baru start** agar TC-01
-  (register) tidak bentrok, atau pakai email unik per run.
+- Prasyarat: server jalan (`make run`), PostgreSQL up, tabel `users` termigrasi.
+- Data unik per run: pakai email ber-timestamp agar bisa diulang.
 
 ## Variables
 | Nama | Sumber |
 |---|---|
 | `BASE_URL` | `http://localhost:8080/api/v1` |
-| `EMAIL` | `qa+$(date +%s)@example.com` (unik per run) |
+| `EMAIL` | `qa+$(date +%s)@pln.co.id` |
+| `EMAIL2` | `qa2+$(date +%s)@icon.id` (org berbeda) |
 | `PASSWORD` | `secret123` |
-| `TOKEN` | di-capture dari TC-03 (login) |
+| `ACCESS` / `REFRESH` | di-capture dari Login |
+| `UID` / `UID2` | id user hasil register |
 
-> Set di awal run:
+> Setup:
 > ```bash
 > BASE_URL=http://localhost:8080/api/v1
-> EMAIL="qa+$(date +%s)@example.com"
-> PASSWORD='secret123'
+> EMAIL="qa+$(date +%s)@pln.co.id"; EMAIL2="qa2+$(date +%s)@icon.id"; PASSWORD=secret123
 > ```
 
 ---
 
 ## Test Cases
 
-### TC-01 — Register user baru
-- **Method / Path:** `POST /auth/register`
-- **curl:**
-  ```bash
-  curl -s -i -X POST "$BASE_URL/auth/register" \
-    -H "Content-Type: application/json" \
-    -d "{\"name\":\"QA User\",\"email\":\"$EMAIL\",\"password\":\"$PASSWORD\"}"
-  ```
-- **Ekspektasi:**
-  - Status `201`
-  - `success == true`, `data.email == $EMAIL`, `data.id` terisi
-  - **Password TIDAK muncul** di response
+### TC-01 — Register (org pln) → 201
+```bash
+curl -s -i -X POST "$BASE_URL/auth/register" -H "Content-Type: application/json" \
+  -d "{\"name\":\"QA\",\"email\":\"$EMAIL\",\"password\":\"$PASSWORD\",\"organization_code\":\"pln\"}"
+```
+- **Capture:** `data.id` → `UID`.
+- **Ekspektasi:** `201`; `data.organization_code=pln`; **password tidak** muncul di body.
 
-### TC-02 — Register email duplikat
-- **Method / Path:** `POST /auth/register` (email sama seperti TC-01)
-- **curl:**
-  ```bash
-  curl -s -o /dev/null -w "%{http_code}\n" -X POST "$BASE_URL/auth/register" \
-    -H "Content-Type: application/json" \
-    -d "{\"name\":\"QA User\",\"email\":\"$EMAIL\",\"password\":\"$PASSWORD\"}"
-  ```
-- **Ekspektasi:**
-  - Status `409`; `success == false`; **bukan** `5xx`
+### TC-02 — Register email duplikat → 409
+Ulangi TC-01 dengan `$EMAIL` sama. **Ekspektasi:** `409` code `EMAIL_TAKEN`; bukan 5xx.
 
-### TC-03 — Login berhasil
-- **Method / Path:** `POST /auth/login`
-- **curl:**
-  ```bash
-  curl -s -i -X POST "$BASE_URL/auth/login" \
-    -H "Content-Type: application/json" \
-    -d "{\"email\":\"$EMAIL\",\"password\":\"$PASSWORD\"}"
-  ```
-- **Capture:** `data.token` → `TOKEN`
-- **Ekspektasi:**
-  - Status `200`
-  - `data.token` tidak kosong; `data.user.email == $EMAIL`
+### TC-03 — Register validasi → 400
+Body `{"name":"x","email":"bad","password":"1","organization_code":""}`.
+**Ekspektasi:** `400` code `VALIDATION_ERROR`.
 
-### TC-04 — Login password salah
-- **Method / Path:** `POST /auth/login`
-- **curl:**
-  ```bash
-  curl -s -o /dev/null -w "%{http_code}\n" -X POST "$BASE_URL/auth/login" \
-    -H "Content-Type: application/json" \
-    -d "{\"email\":\"$EMAIL\",\"password\":\"salah\"}"
-  ```
-- **Ekspektasi:**
-  - Status `401`; pesan generik (tidak membedakan email tak ada vs password salah); **bukan** `5xx`
+### TC-04 — Login → 200 + token
+```bash
+curl -s -X POST "$BASE_URL/auth/login" -H "Content-Type: application/json" \
+  -d "{\"email\":\"$EMAIL\",\"password\":\"$PASSWORD\"}"
+```
+- **Capture:** `data.access_token` → `ACCESS`, `data.refresh_token` → `REFRESH`.
+- **Ekspektasi:** `200`; kedua token non-kosong; `expires_in` > 0.
+- **Cek claim:** decode bagian payload access token → memuat `organization_code:"pln"`.
 
-### TC-05 — Validasi input register
-- **Method / Path:** `POST /auth/register`
-- **Body:** email invalid + password terlalu pendek (`min=6`)
-- **curl:**
-  ```bash
-  curl -s -o /dev/null -w "%{http_code}\n" -X POST "$BASE_URL/auth/register" \
-    -H "Content-Type: application/json" \
-    -d '{"name":"x","email":"bukan-email","password":"1"}'
-  ```
-- **Ekspektasi:**
-  - Status `400`; **bukan** `5xx`
+### TC-05 — Login password salah → 401
+Body password salah. **Ekspektasi:** `401` code `INVALID_CREDENTIALS` (generik).
 
-### TC-06 — Login tanpa body / body kosong
-- **Method / Path:** `POST /auth/login`
-- **curl:**
-  ```bash
-  curl -s -o /dev/null -w "%{http_code}\n" -X POST "$BASE_URL/auth/login" \
-    -H "Content-Type: application/json" -d '{}'
-  ```
-- **Ekspektasi:**
-  - Status `400` (field `required` gagal); **bukan** `5xx`
+### TC-06 — /users/me tanpa token → 401
+```bash
+curl -s -o /dev/null -w "%{http_code}\n" "$BASE_URL/users/me"
+```
+**Ekspektasi:** `401` code `UNAUTHORIZED`.
+
+### TC-07 — /users/me dengan token → 200
+```bash
+curl -s "$BASE_URL/users/me" -H "Authorization: Bearer $ACCESS"
+```
+**Ekspektasi:** `200`; `data.email=$EMAIL`, `data.organization_code=pln`.
+
+### TC-08 — Tenant isolation → 403
+Register user kedua di org lain (`icon`), dapatkan `UID2`. Lalu akses lintas-org:
+```bash
+curl -s -o /dev/null -w "%{http_code}\n" "$BASE_URL/users/$UID2" -H "Authorization: Bearer $ACCESS"
+```
+**Ekspektasi:** `403` code `FORBIDDEN_ORGANIZATION` (user pln tak boleh lihat user icon).
+
+### TC-09 — Update user → 200
+```bash
+curl -s -X PUT "$BASE_URL/users/$UID" -H "Authorization: Bearer $ACCESS" \
+  -H "Content-Type: application/json" -d '{"name":"QA Updated"}'
+```
+**Ekspektasi:** `200`; `data.name=QA Updated`; email/org tak berubah.
+
+### TC-10 — Refresh → 200
+```bash
+curl -s -o /dev/null -w "%{http_code}\n" -X POST "$BASE_URL/auth/refresh" \
+  -H "Content-Type: application/json" -d "{\"refresh_token\":\"$REFRESH\"}"
+```
+**Ekspektasi:** `200` + token pair baru.
+
+### TC-11 — Refresh pakai ACCESS token → 401
+Kirim `$ACCESS` sebagai `refresh_token`. **Ekspektasi:** `401 INVALID_REFRESH_TOKEN`
+(type guard: access token bukan refresh).
+
+### TC-12 — Soft delete → 200, lalu efeknya
+```bash
+curl -s -o /dev/null -w "%{http_code}\n" -X DELETE "$BASE_URL/users/$UID" -H "Authorization: Bearer $ACCESS"
+```
+**Ekspektasi:** `200`. Lanjutan:
+- `GET /users/$UID` (token masih ada) → `404 USER_NOT_FOUND`.
+- Login `$EMAIL` lagi → `401` (user terhapus tak ditemukan).
 
 ---
 
-## Roadmap (PENDING — belum ada endpoint)
-Tambahkan case saat fitur dibangun:
-- `POST /auth/forgot-password`, `POST /auth/reset-password`
-- `GET /auth/me` (butuh middleware auth / Bearer token)
-- `POST /auth/refresh`
-- Ganti dummy → persistensi GORM (`users`), hash password (bcrypt), JWT asli.
+## Teardown (opsional)
+```sql
+DELETE FROM users WHERE email LIKE 'qa%@%';   -- hard delete data uji
+```
+
+## Roadmap (PENDING)
+- Forgot/reset password · role/authorization (admin) · rotasi/revoke refresh token.

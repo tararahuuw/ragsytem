@@ -99,6 +99,19 @@ Fokus pada *keputusan bisnis* (kenapa status/kode tertentu, aturan unik, transis
 anti-enumeration, dll) — bukan sekadar schema (itu domain Swagger). Kalau perubahan tidak
 menyentuh endpoint/bisnis logic, lewati dan sebut alasannya di summary.
 
+## Langkah 5d — Update Postman collection & environment (bila API berubah)
+Jika ada endpoint baru / perubahan request-response, **update file di `postman/`** supaya user
+tinggal re-import (tak perlu bikin manual di Postman):
+- `postman/ragsystem.postman_collection.json` — tambah/ubah request di folder module yang sesuai
+  (method, URL `{{base_url}}/...`, header, body contoh, deskripsi, dan test dasar status code).
+  Endpoint yang menghasilkan token/id penting → tambah test script yang menyimpannya ke variable
+  environment (mis. `pm.environment.set('token', ...)`).
+- `postman/ragsystem.local.postman_environment.json` — tambah variable baru bila perlu
+  (jangan isi nilai rahasia asli; pakai contoh).
+- Jaga format **Postman schema v2.1.0** dan pastikan JSON valid (`python3 -c "import json,...`).
+  Folder = module (samakan dengan struktur route). Kalau perubahan tak menyentuh permukaan API,
+  lewati & sebut di summary.
+
 ## Langkah 6 — Smoke test API terkait
 Pastikan server jalan (`make run` di background) & Postgres up. Hit endpoint yang baru/diubah
 dengan `curl`, cek status & body sesuai harapan. Perhatikan **tidak ada `5xx`** tak terduga.
@@ -143,6 +156,6 @@ dengan jujur bila ada yang di-skip atau gagal.
 
 ## Definition of Done
 Fitur dianggap selesai bila: kode lolos build/vet/test, endpoint terkait & seluruh module lolos
-smoke test (tanpa 5xx tak terduga), Swagger ter-generate, **ROUTES.md** & playbook `testing/`
-terupdate, review security/business beres, dan CLAUDE.md diperbarui. Tunggu "review OK" dari user
-sebelum commit/push.
+smoke test (tanpa 5xx tak terduga), Swagger ter-generate, **ROUTES.md**, **Postman
+collection/environment**, & playbook `testing/` terupdate, review security/business beres, dan
+CLAUDE.md diperbarui. Tunggu "review OK" dari user sebelum commit/push.

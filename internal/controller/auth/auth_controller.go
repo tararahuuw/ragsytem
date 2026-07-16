@@ -24,13 +24,13 @@ func NewController(svc authsvc.Service) *Controller {
 
 // Register godoc
 //
-//	@Summary		Register a new user (dummy)
-//	@Description	Creates a user in the in-memory store. Demo only.
+//	@Summary		Register a new user
+//	@Description	Creates a user with an organizationCode (bcrypt-hashed password).
 //	@Tags			auth
 //	@Accept			json
 //	@Produce		json
 //	@Param			payload	body		authdto.RegisterRequest	true	"Registration payload"
-//	@Success		201		{object}	response.BaseResponse{data=authdto.UserResponse}
+//	@Success		201		{object}	response.BaseResponse{data=user.UserResponse}
 //	@Failure		400		{object}	response.ErrorResponse
 //	@Failure		409		{object}	response.ErrorResponse
 //	@Router			/auth/register [post]
@@ -61,13 +61,13 @@ func (c *Controller) Register(ctx *gin.Context) {
 
 // Login godoc
 //
-//	@Summary		Login (dummy)
-//	@Description	Validates credentials against the in-memory store and returns a dummy token.
+//	@Summary		Login
+//	@Description	Validates credentials and returns access + refresh JWT (with organizationCode claim).
 //	@Tags			auth
 //	@Accept			json
 //	@Produce		json
 //	@Param			payload	body		authdto.LoginRequest	true	"Login payload"
-//	@Success		200		{object}	response.BaseResponse{data=authdto.LoginResponse}
+//	@Success		200		{object}	response.BaseResponse{data=authdto.TokenResponse}
 //	@Failure		400		{object}	response.ErrorResponse
 //	@Failure		401		{object}	response.ErrorResponse
 //	@Router			/auth/login [post]
@@ -81,7 +81,7 @@ func (c *Controller) Login(ctx *gin.Context) {
 		return
 	}
 
-	res, err := c.svc.Login(ctx.Request.Context(), req)
+	tokens, err := c.svc.Login(ctx.Request.Context(), req)
 	if err != nil {
 		switch {
 		case errors.Is(err, authsvc.ErrInvalidCredentials):
@@ -93,5 +93,42 @@ func (c *Controller) Login(ctx *gin.Context) {
 		return
 	}
 
-	response.OK(ctx, "login success", res)
+	response.OK(ctx, "login success", tokens)
+}
+
+// Refresh godoc
+//
+//	@Summary		Refresh access token
+//	@Description	Exchanges a valid refresh token for a new access + refresh pair.
+//	@Tags			auth
+//	@Accept			json
+//	@Produce		json
+//	@Param			payload	body		authdto.RefreshRequest	true	"Refresh payload"
+//	@Success		200		{object}	response.BaseResponse{data=authdto.TokenResponse}
+//	@Failure		400		{object}	response.ErrorResponse
+//	@Failure		401		{object}	response.ErrorResponse
+//	@Router			/auth/refresh [post]
+func (c *Controller) Refresh(ctx *gin.Context) {
+	log := logger.FromContext(ctx.Request.Context())
+
+	var req authdto.RefreshRequest
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		log.Warn("refresh: invalid payload", "error", err.Error())
+		response.ValidationError(ctx, "invalid request payload", err.Error())
+		return
+	}
+
+	tokens, err := c.svc.Refresh(ctx.Request.Context(), req)
+	if err != nil {
+		switch {
+		case errors.Is(err, authsvc.ErrInvalidRefresh):
+			response.Error(ctx, http.StatusUnauthorized, err.Error(), "INVALID_REFRESH_TOKEN")
+		default:
+			log.Error("refresh: unexpected error", "error", err)
+			response.Error(ctx, http.StatusInternalServerError, "failed to refresh token", "INTERNAL_ERROR")
+		}
+		return
+	}
+
+	response.OK(ctx, "token refreshed", tokens)
 }

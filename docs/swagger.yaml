@@ -12,13 +12,12 @@ definitions:
     - email
     - password
     type: object
-  auth.LoginResponse:
+  auth.RefreshRequest:
     properties:
-      token:
-        example: dummy-token-1-1700000000
+      refresh_token:
         type: string
-      user:
-        $ref: '#/definitions/auth.UserResponse'
+    required:
+    - refresh_token
     type: object
   auth.RegisterRequest:
     properties:
@@ -28,6 +27,9 @@ definitions:
       name:
         example: John Doe
         type: string
+      organization_code:
+        example: pln
+        type: string
       password:
         example: secret123
         minLength: 6
@@ -35,18 +37,21 @@ definitions:
     required:
     - email
     - name
+    - organization_code
     - password
     type: object
-  auth.UserResponse:
+  auth.TokenResponse:
     properties:
-      email:
-        example: john@example.com
+      access_token:
         type: string
-      id:
-        example: 1
+      expires_in:
+        description: access token TTL in seconds
+        example: 900
         type: integer
-      name:
-        example: John Doe
+      refresh_token:
+        type: string
+      token_type:
+        example: Bearer
         type: string
     type: object
   health.HealthResponse:
@@ -86,6 +91,30 @@ definitions:
         example: false
         type: boolean
     type: object
+  user.UpdateUserRequest:
+    properties:
+      name:
+        example: John Updated
+        type: string
+      password:
+        example: newSecret123
+        type: string
+    type: object
+  user.UserResponse:
+    properties:
+      email:
+        example: john@example.com
+        type: string
+      id:
+        example: 1
+        type: integer
+      name:
+        example: John Doe
+        type: string
+      organization_code:
+        example: pln
+        type: string
+    type: object
 host: localhost:8080
 info:
   contact:
@@ -101,8 +130,8 @@ paths:
     post:
       consumes:
       - application/json
-      description: Validates credentials against the in-memory store and returns a
-        dummy token.
+      description: Validates credentials and returns access + refresh JWT (with organizationCode
+        claim).
       parameters:
       - description: Login payload
         in: body
@@ -120,7 +149,7 @@ paths:
             - $ref: '#/definitions/response.BaseResponse'
             - properties:
                 data:
-                  $ref: '#/definitions/auth.LoginResponse'
+                  $ref: '#/definitions/auth.TokenResponse'
               type: object
         "400":
           description: Bad Request
@@ -130,14 +159,49 @@ paths:
           description: Unauthorized
           schema:
             $ref: '#/definitions/response.ErrorResponse'
-      summary: Login (dummy)
+      summary: Login
+      tags:
+      - auth
+  /auth/refresh:
+    post:
+      consumes:
+      - application/json
+      description: Exchanges a valid refresh token for a new access + refresh pair.
+      parameters:
+      - description: Refresh payload
+        in: body
+        name: payload
+        required: true
+        schema:
+          $ref: '#/definitions/auth.RefreshRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.BaseResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/auth.TokenResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+      summary: Refresh access token
       tags:
       - auth
   /auth/register:
     post:
       consumes:
       - application/json
-      description: Creates a user in the in-memory store. Demo only.
+      description: Creates a user with an organizationCode (bcrypt-hashed password).
       parameters:
       - description: Registration payload
         in: body
@@ -155,7 +219,7 @@ paths:
             - $ref: '#/definitions/response.BaseResponse'
             - properties:
                 data:
-                  $ref: '#/definitions/auth.UserResponse'
+                  $ref: '#/definitions/user.UserResponse'
               type: object
         "400":
           description: Bad Request
@@ -165,7 +229,7 @@ paths:
           description: Conflict
           schema:
             $ref: '#/definitions/response.ErrorResponse'
-      summary: Register a new user (dummy)
+      summary: Register a new user
       tags:
       - auth
   /healthz:
@@ -185,7 +249,160 @@ paths:
       summary: Health check
       tags:
       - health
+  /users/{id}:
+    delete:
+      description: Soft-deletes a user within the caller's organization (sets deleted_at).
+      parameters:
+      - description: User ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.BaseResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Soft delete user
+      tags:
+      - user
+    get:
+      description: Returns a user within the caller's organization (tenant-scoped).
+      parameters:
+      - description: User ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.BaseResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/user.UserResponse'
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get user by id
+      tags:
+      - user
+    put:
+      consumes:
+      - application/json
+      description: Updates name and/or password of a user within the caller's organization.
+      parameters:
+      - description: User ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Fields to update
+        in: body
+        name: payload
+        required: true
+        schema:
+          $ref: '#/definitions/user.UpdateUserRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.BaseResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/user.UserResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Update user
+      tags:
+      - user
+  /users/me:
+    get:
+      description: Returns the authenticated user (identified by the JWT).
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.BaseResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/user.UserResponse'
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get current user
+      tags:
+      - user
 schemes:
 - http
 - https
+securityDefinitions:
+  BearerAuth:
+    description: Type "Bearer" followed by a space and the access token.
+    in: header
+    name: Authorization
+    type: apiKey
 swagger: "2.0"

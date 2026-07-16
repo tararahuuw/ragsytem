@@ -4,20 +4,22 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
+	"github.com/tararahuuw/ragsytem/internal/config"
 	authctrl "github.com/tararahuuw/ragsytem/internal/controller/auth"
-	authrepo "github.com/tararahuuw/ragsytem/internal/repository/auth"
+	userrepo "github.com/tararahuuw/ragsytem/internal/repository/user"
 	authsvc "github.com/tararahuuw/ragsytem/internal/service/auth"
 )
 
-// Register wires the auth module (repository -> service -> controller) and
-// mounts its routes onto the given group.
-//
-// db is unused for now: the dummy repository is in-memory. Keep the parameter
-// so switching to a GORM-backed repository later is a one-line change here.
-func Register(rg *gin.RouterGroup, db *gorm.DB) {
+// Register wires the auth module and mounts its public routes.
+func Register(rg *gin.RouterGroup, cfg *config.Config, db *gorm.DB) {
 	ctrl := authctrl.NewController(
 		authsvc.NewService(
-			authrepo.NewRepository(),
+			userrepo.NewRepository(db),
+			authsvc.Config{
+				Secret:     cfg.JWTSecret,
+				AccessTTL:  cfg.JWTAccessTTL,
+				RefreshTTL: cfg.JWTRefreshTTL,
+			},
 		),
 	)
 
@@ -25,5 +27,6 @@ func Register(rg *gin.RouterGroup, db *gorm.DB) {
 	{
 		group.POST("/register", ctrl.Register)
 		group.POST("/login", ctrl.Login)
+		group.POST("/refresh", ctrl.Refresh)
 	}
 }

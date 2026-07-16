@@ -11,6 +11,7 @@ import (
 
 	authroute "github.com/tararahuuw/ragsytem/internal/router/auth"
 	healthroute "github.com/tararahuuw/ragsytem/internal/router/health"
+	userroute "github.com/tararahuuw/ragsytem/internal/router/user"
 )
 
 // New builds the Gin engine: global middleware, swagger UI, and versioned routes.
@@ -35,7 +36,8 @@ func New(cfg *config.Config, db *gorm.DB) *gin.Engine {
 	// API v1 — register modules here
 	v1 := r.Group("/api/v1")
 	healthroute.Register(v1, db)
-	authroute.Register(v1, db)
+	authroute.Register(v1, cfg, db)
+	userroute.Register(v1, cfg, db)
 
 	return r
 }

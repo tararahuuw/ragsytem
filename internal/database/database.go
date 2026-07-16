@@ -9,6 +9,7 @@ import (
 	"gorm.io/gorm/logger"
 
 	"github.com/tararahuuw/ragsytem/internal/config"
+	usermodel "github.com/tararahuuw/ragsytem/internal/model/user"
 )
 
 // Connect opens a pooled GORM connection to PostgreSQL.
@@ -42,7 +43,12 @@ func Connect(cfg *config.Config) (*gorm.DB, error) {
 //
 //	return db.AutoMigrate(&model.Document{}, &model.Chunk{})
 func Migrate(db *gorm.DB) error {
-	return db.AutoMigrate(
-	// no models yet
-	)
+	if err := db.AutoMigrate(&usermodel.User{}); err != nil {
+		return err
+	}
+	// Partial unique index: email must be unique among ACTIVE (non-deleted)
+	// users, so a soft-deleted email can be reused on re-registration.
+	return db.Exec(
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_active ON users (email) WHERE deleted_at IS NULL`,
+	).Error
 }

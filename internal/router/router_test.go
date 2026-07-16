@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 
 	"github.com/DATA-DOG/go-sqlmock"
@@ -15,15 +14,6 @@ import (
 	"github.com/tararahuuw/ragsytem/internal/config"
 	"github.com/tararahuuw/ragsytem/internal/router"
 )
-
-// doJSON is a small helper for firing a JSON request at the router.
-func doJSON(r http.Handler, method, path, body string) *httptest.ResponseRecorder {
-	w := httptest.NewRecorder()
-	req := httptest.NewRequest(method, path, strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	r.ServeHTTP(w, req)
-	return w
-}
 
 // newMockGorm returns a GORM DB backed by go-sqlmock so we can exercise the
 // full HTTP stack without a real PostgreSQL instance.
@@ -86,50 +76,29 @@ func TestHealthz_DBDown(t *testing.T) {
 	}
 }
 
-func TestAuth_RegisterLoginFlow(t *testing.T) {
+// Protected /users routes must reject requests without a valid Bearer token.
+// (Full auth happy-path is covered by the live smoke test / testing playbook,
+// since it needs a real PostgreSQL.)
+func TestUsers_RequireAuth(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	gdb, _ := newMockGorm(t) // auth uses in-memory store; db only needed for router.New wiring
-	r := router.New(&config.Config{AppEnv: "test"}, gdb)
+	gdb, _ := newMockGorm(t)
+	r := router.New(&config.Config{AppEnv: "test", JWTSecret: "test-secret"}, gdb)
 
-	const (
-		reg   = `{"name":"QA","email":"qa@example.com","password":"secret123"}`
-		login = `{"email":"qa@example.com","password":"secret123"}`
-	)
-
-	// register -> 201
-	if w := doJSON(r, http.MethodPost, "/api/v1/auth/register", reg); w.Code != http.StatusCreated {
-		t.Fatalf("register: expected 201, got %d (%s)", w.Code, w.Body.String())
+	cases := []struct {
+		method, path string
+	}{
+		{http.MethodGet, "/api/v1/users/me"},
+		{http.MethodGet, "/api/v1/users/1"},
+		{http.MethodPut, "/api/v1/users/1"},
+		{http.MethodDelete, "/api/v1/users/1"},
 	}
-
-	// duplicate register -> 409
-	if w := doJSON(r, http.MethodPost, "/api/v1/auth/register", reg); w.Code != http.StatusConflict {
-		t.Fatalf("duplicate register: expected 409, got %d", w.Code)
-	}
-
-	// login ok -> 200 + token
-	w := doJSON(r, http.MethodPost, "/api/v1/auth/login", login)
-	if w.Code != http.StatusOK {
-		t.Fatalf("login: expected 200, got %d (%s)", w.Code, w.Body.String())
-	}
-	var body struct {
-		Data struct {
-			Token string `json:"token"`
-		} `json:"data"`
-	}
-	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil || body.Data.Token == "" {
-		t.Fatalf("login: expected token in body, got %s (err=%v)", w.Body.String(), err)
-	}
-
-	// wrong password -> 401
-	if w := doJSON(r, http.MethodPost, "/api/v1/auth/login",
-		`{"email":"qa@example.com","password":"wrong"}`); w.Code != http.StatusUnauthorized {
-		t.Fatalf("wrong password: expected 401, got %d", w.Code)
-	}
-
-	// invalid payload (bad email, short password) -> 400
-	if w := doJSON(r, http.MethodPost, "/api/v1/auth/register",
-		`{"name":"x","email":"not-an-email","password":"1"}`); w.Code != http.StatusBadRequest {
-		t.Fatalf("invalid register: expected 400, got %d", w.Code)
+	for _, tc := range cases {
+		w := httptest.NewRecorder()
+		req := httptest.NewRequest(tc.method, tc.path, nil)
+		r.ServeHTTP(w, req)
+		if w.Code != http.StatusUnauthorized {
+			t.Fatalf("%s %s: expected 401 without token, got %d", tc.method, tc.path, w.Code)
+		}
 	}
 }
 
