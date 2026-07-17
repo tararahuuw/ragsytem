@@ -25,6 +25,9 @@ func New(cfg *config.Config, db *gorm.DB, store *minioinfra.Client) *gin.Engine 
 	}
 
 	r := gin.New()
+	// Buffer only small multipart parts in memory; larger chunks spill to a temp
+	// file instead of RAM (the per-request cap lives in the upload controller).
+	r.MaxMultipartMemory = 16 << 20
 	r.Use(
 		middleware.RequestID(),  // set id first so Recovery/AccessLog can log it
 		middleware.Recovery(),   // panic safety net -> standardized 500 + stack log

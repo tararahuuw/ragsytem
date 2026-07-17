@@ -17,6 +17,21 @@ func TestValidateFileName(t *testing.T) {
 	}
 }
 
+func TestValidateSessionID(t *testing.T) {
+	ok := []string{"7E94247A-EE64-4D81-90F9-A8077238FAF9", "abc12345", "a-b-c-1-2-3-4-5"}
+	for _, s := range ok {
+		if err := validateSessionID(s); err != nil {
+			t.Errorf("expected %q valid, got %v", s, err)
+		}
+	}
+	bad := []string{"", "short", "../evil", "sess/ion", "has space", "sess;drop"}
+	for _, s := range bad {
+		if err := validateSessionID(s); err == nil {
+			t.Errorf("expected %q rejected", s)
+		}
+	}
+}
+
 func TestValidatePDFExtension(t *testing.T) {
 	if err := validatePDFExtension("report.pdf"); err != nil {
 		t.Errorf("report.pdf should pass: %v", err)

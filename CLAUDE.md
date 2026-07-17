@@ -8,12 +8,29 @@
 
 ## 1. Ringkasan
 
-Backend API untuk aplikasi **RAG (NotebookLM-like)**: user upload dokumen → di-ingest →
-tanya-jawab terhadap isi dokumen. Saat ini masih tahap **scaffold**: baru ada 1 vertical slice
-(`healthcheck`) sebagai contoh pola. Fitur RAG (upload, ingest, embedding, chat) menyusul.
+Backend API untuk aplikasi **RAG (NotebookLM-like)** untuk PLN/Icon Plus: user upload banyak
+dokumen → di-ingest oleh mesin AI → user tanya-jawab terhadap isi dokumen.
 
-**Stack:** Go 1.26 · Gin · GORM (PostgreSQL) · swaggo/swag (Swagger) · Docker.
+**Stack:** Go 1.26 · Gin · GORM (PostgreSQL) · JWT · MinIO (object storage) · swaggo/swag · Docker.
 **Module path:** `github.com/tararahuuw/ragsytem`
+
+### 1a. Tiga core krusial aplikasi 🎯
+Semua keputusan arsitektur harus menopang tiga pilar ini:
+
+1. **Upload file besar/banyak** (SUDAH ada — module `upload`). User meng-upload banyak dokumen
+   besar (PDF). Chunked resumable → MinIO → compose server-side → presigned. Lihat §11.
+2. **RAG — konsumsi API tim AI** (BELUM). Di PLN ada **divisi AI khusus** yang mengurus dokumen
+   (ekstraksi/OCR, embedding, vector store, retrieval+generation). Backend kita **meng-consume
+   API mereka**, bukan menjalankan model sendiri — pola sama seperti elArch (backend = orchestrator,
+   mesin AI = service terpisah). Perlu diklarifikasi saat implementasi: kontrak API mereka
+   (endpoint ingest & query), bagaimana dokumen dikirim (path MinIO / presigned / push), bentuk
+   context yang mereka minta, auth antar-service, dan idempotency.
+3. **Discussion / Q&A** (BELUM). User bertanya terkait dokumen yang sudah di-upload; backend
+   meneruskan ke mesin RAG (core #2) dengan filter akses (mis. per organizationCode/user),
+   menyimpan riwayat percakapan (mirip `ChatHistory` elArch), dan mengembalikan jawaban.
+
+> Referensi pola end-to-end ketiga core: `../elarch/CLAUDE.md` (upload chunked, proxy LLM/OCR,
+> access-control retrieval, chat history).
 
 ---
 
@@ -293,18 +310,60 @@ make run              # server :8080
 - [x] **Ubah role via API**: `PATCH /users/{id}/role` (admin-only, admin/user, self-guard).
 - [x] **Upload file besar (chunked)** ala elArch: `POST /uploads/chunk` → MinIO → compose →
       presigned; validasi (PDF/MIME/nama), dedup SHA-256, kuota per-role, cleanup async.
+- [x] **Upload production-hardened** (§8b): reset merge on failure, session janitor, temp-chunk
+      lifecycle, body-size cap, per-user object path. Full test 39/39.
+- [ ] **Core #2 — RAG consume API tim AI**: ingest dokumen hasil upload + endpoint query.
+- [ ] **Core #3 — Discussion/Q&A**: chat terhadap dokumen + riwayat percakapan (per user/org).
 - [ ] Auth lanjutan: forgot/reset password, revoke refresh token.
-- [ ] Ingestion RAG (ekstraksi teks / chunking / embedding) dari objek hasil upload.
-- [ ] Integrasi mesin embedding + vector store.
-- [ ] Endpoint chat / Q&A (RAG) + riwayat percakapan.
 
 > Referensi desain sistem serupa yang sudah jadi: lihat `../elarch/CLAUDE.md` (pola upload
 > chunked, proxy LLM/OCR, access-control retrieval, chat history).
 
 ---
 
+## 8b. Core #1 — Upload file besar (detail & production-safety) 🎯
+
+Module `upload` = pilar #1. Mekanisme (ikut elArch, lihat ROUTES.md untuk kontrak endpoint):
+`POST /uploads/chunk` → stream chunk ke MinIO `temp_chunks/{org}/{userId}/{sid}/{i}` →
+saat semua chunk hadir, **compose server-side** → `uploads/{org}/{userId}/{sid}.pdf` →
+**presigned URL** (Content-Disposition = nama asli).
+
+**Error handling ("try/catch" ala Go) — aman untuk produksi:**
+- Semua langkah (Put/Compose/SaveLog/IncrementUsage/Presign) cek `error` + log; kegagalan
+  *expected* pakai typed `*upload.Error` → controller map ke status tepat
+  (400/401/409/429); *unexpected* → 500 tanpa bocor detail.
+- **Panic**: request tertutup `middleware.Recovery`; satu-satunya goroutine (cleanup) + janitor
+  punya `recover` sendiri (wajib per §4c).
+- **Merge tak "meracuni" sesi**: kalau compose gagal transient, `mergeStarted` di-reset → retry
+  client bisa merge ulang (bukan error permanen).
+- **Non-fatal**: gagal SaveLog/IncrementUsage **tidak** menggagalkan upload yang objek-nya sudah
+  tersimpan (hanya di-log) — file utama diprioritaskan.
+
+**Guard produksi:**
+- **Memory**: janitor evict sesi idle > 30 mnt (`sessionIdleTTL`) → map tak bocor.
+- **Storage**: bucket lifecycle auto-expire `temp_chunks/` 1 hari (chunk terlantar).
+- **DoS**: `http.MaxBytesReader` cap body per-request (= file cap + slack) + `MaxMultipartMemory`
+  16MB (chunk besar spill ke disk, bukan RAM).
+- **Isolasi**: object key mengandung `userId` → user se-org tak bisa hijack sesi via tebak `sessionId`.
+- **Validasi**: `sessionId` UUID-like, `chunkIndex` in-range, PDF-only + MIME sniff, whitelist nama
+  (anti path-traversal/double-ext), cap 500MB, **min chunk 5 MiB** (syarat S3 compose), dedup SHA-256.
+
+**Keterbatasan diketahui / TODO produksi:** (a) presigned URL pakai endpoint internal — di prod
+arahkan ke endpoint/CDN publik; (b) state sesi **in-memory** (tak horizontal-scale; untuk multi-
+instance perlu Redis + rebuild `received` dari `ListObjects`); (c) verifikasi SHA-256 pasca-merge
+belum dilakukan (dedup pakai SHA klaim-client) — cukup untuk MVP.
+
+---
+
 ## 9. Changelog keputusan (append di sini)
 
+- **2026-07-17** — Dokumentasikan **3 core krusial** (upload · RAG consume API tim AI ·
+  discussion/Q&A) di §1a. **Hardening produksi module upload** (§8b): reset `mergeStarted` saat
+  compose gagal (anti session-poisoning), **janitor** evict sesi idle 30 mnt (anti memory leak),
+  **bucket lifecycle** expire `temp_chunks/` 1 hari (anti storage bloat), **body-size cap**
+  (`MaxBytesReader` + `MaxMultipartMemory` 16MB, anti DoS), **userId di object path** (isolasi
+  per-user), presigned + Content-Disposition. Review error-handling: aman produksi. Full test
+  semua modul **39/39 PASS**.
 - **2026-07-16** — Inisiasi backend. Pilihan stack: Gin + GORM + swaggo. Manual DI di router
   (belum perlu wire/fx untuk skala kecil-menengah). Response envelope `dto.APIResponse`.
 - **2026-07-16** — Refactor ke **foldering per-module** di tiap layer

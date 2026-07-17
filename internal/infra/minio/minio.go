@@ -7,11 +7,13 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/url"
 	"time"
 
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
+	"github.com/minio/minio-go/v7/pkg/lifecycle"
 
 	"github.com/tararahuuw/ragsytem/internal/config"
 )
@@ -49,7 +51,23 @@ func (c *Client) ensureBucket(ctx context.Context) error {
 			return fmt.Errorf("minio: make bucket %q: %w", c.bucket, err)
 		}
 	}
+	// Best-effort: auto-expire abandoned temp chunks so storage doesn't grow
+	// unbounded when uploads are never completed. Non-fatal if unsupported.
+	if err := c.setTempChunkLifecycle(ctx); err != nil {
+		slog.Warn("minio: could not set temp-chunk lifecycle (abandoned chunks won't auto-expire)", "error", err)
+	}
 	return nil
+}
+
+func (c *Client) setTempChunkLifecycle(ctx context.Context) error {
+	cfg := lifecycle.NewConfiguration()
+	cfg.Rules = []lifecycle.Rule{{
+		ID:         "expire-temp-chunks",
+		Status:     "Enabled",
+		RuleFilter: lifecycle.Filter{Prefix: "temp_chunks/"},
+		Expiration: lifecycle.Expiration{Days: 1},
+	}}
+	return c.raw.SetBucketLifecycle(ctx, c.bucket, cfg)
 }
 
 // Bucket returns the bound bucket name.
@@ -113,9 +131,14 @@ func (c *Client) Remove(ctx context.Context, objects []string) error {
 	return nil
 }
 
-// PresignedGetURL returns a time-limited download URL for an object.
-func (c *Client) PresignedGetURL(ctx context.Context, object string, expiry time.Duration) (string, error) {
-	u, err := c.raw.PresignedGetObject(ctx, c.bucket, object, expiry, url.Values{})
+// PresignedGetURL returns a time-limited download URL for an object. If
+// downloadName is non-empty, the URL forces a download with that filename.
+func (c *Client) PresignedGetURL(ctx context.Context, object string, expiry time.Duration, downloadName string) (string, error) {
+	params := url.Values{}
+	if downloadName != "" {
+		params.Set("response-content-disposition", fmt.Sprintf(`attachment; filename="%s"`, downloadName))
+	}
+	u, err := c.raw.PresignedGetObject(ctx, c.bucket, object, expiry, params)
 	if err != nil {
 		return "", fmt.Errorf("minio: presign %q: %w", object, err)
 	}

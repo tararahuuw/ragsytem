@@ -23,6 +23,8 @@ func Register(rg *gin.RouterGroup, cfg *config.Config, db *gorm.DB, store *minio
 				PreviewExpiry: cfg.UploadPreviewExpiry,
 			},
 		),
+		// per-request body cap = file cap + slack for multipart boundaries/fields.
+		cfg.UploadMaxFileSize+(32<<20),
 	)
 
 	group := rg.Group("/uploads")

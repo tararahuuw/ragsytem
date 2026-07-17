@@ -9,6 +9,18 @@ import (
 // Whitelist of allowed filename characters (ported from elArch).
 var fileNameRe = regexp.MustCompile(`^[a-zA-Z0-9._ \-\(\)\[\]]+$`)
 
+// sessionID must be UUID-like (alphanumeric + dash) since it is used verbatim
+// as part of the object storage key.
+var sessionIDRe = regexp.MustCompile(`^[a-zA-Z0-9\-]{8,64}$`)
+
+// validateSessionID guards the object key against injection / traversal.
+func validateSessionID(id string) error {
+	if !sessionIDRe.MatchString(id) {
+		return newErr("INVALID_SESSION", http.StatusBadRequest, "sessionId tidak valid")
+	}
+	return nil
+}
+
 // Dangerous inner extensions to reject in double-extension names (e.g. "x.exe.pdf").
 var dangerousExts = []string{
 	".exe", ".sh", ".bat", ".cmd", ".php", ".js", ".jar", ".bin",

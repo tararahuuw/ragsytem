@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 
@@ -16,12 +17,13 @@ import (
 
 // Controller exposes chunked upload endpoints.
 type Controller struct {
-	svc uploadsvc.Service
+	svc      uploadsvc.Service
+	maxBytes int64 // per-request body cap (DoS guard)
 }
 
-// NewController wires an upload Controller.
-func NewController(svc uploadsvc.Service) *Controller {
-	return &Controller{svc: svc}
+// NewController wires an upload Controller. maxBytes caps a single chunk request.
+func NewController(svc uploadsvc.Service, maxBytes int64) *Controller {
+	return &Controller{svc: svc, maxBytes: maxBytes}
 }
 
 // Chunk godoc
@@ -50,8 +52,17 @@ func NewController(svc uploadsvc.Service) *Controller {
 func (c *Controller) Chunk(ctx *gin.Context) {
 	log := logger.FromContext(ctx.Request.Context())
 
+	// DoS guard: cap the whole multipart request body.
+	if c.maxBytes > 0 {
+		ctx.Request.Body = http.MaxBytesReader(ctx.Writer, ctx.Request.Body, c.maxBytes)
+	}
+
 	header, err := ctx.FormFile("file")
 	if err != nil {
+		if strings.Contains(err.Error(), "too large") {
+			response.Error(ctx, http.StatusRequestEntityTooLarge, "ukuran chunk melebihi batas", "CHUNK_TOO_LARGE")
+			return
+		}
 		response.ValidationError(ctx, "chunk file wajib disertakan", err.Error())
 		return
 	}
