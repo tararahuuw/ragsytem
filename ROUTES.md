@@ -18,6 +18,7 @@ Base URL: `http://localhost:8080/api/v1` · Envelope: `internal/response` (`Base
 |---|---|---|---|---|
 | GET | `/healthz` | health | – | Cek kesehatan service + DB |
 | POST | `/auth/register` | auth | **admin** | Buat user baru (role selalu `user`), bcrypt |
+| POST | `/auth/register/bulk` | auth | **admin** | Buat banyak user sekaligus (partial success, password auto-generate) |
 | POST | `/auth/login` | auth | – | Login → access + refresh JWT |
 | POST | `/auth/refresh` | auth | – | Tukar refresh token → token pair baru |
 | GET | `/users/me` | user | Bearer | Profil user dari token |
@@ -92,8 +93,29 @@ Base URL: `http://localhost:8080/api/v1` · Envelope: `internal/response` (`Base
   `403 FORBIDDEN_ROLE` · `409 EMAIL_TAKEN` · `500 INTERNAL_ERROR`.
 - **Logging:** WARN role check gagal · INFO `register: attempt/success` · WARN duplikat.
 
-### POST `/auth/login`
-- **Tujuan:** autentikasi → terbitkan token. **Auth:** publik.
+### POST `/auth/register/bulk`  🔒 admin only
+- **Tujuan:** admin membuat **banyak user sekaligus** (onboarding massal). Body = **array of user**.
+- **Auth:** **admin** (401 tanpa token · 403 non-admin).
+- **Request:** array `BulkRegisterItem` = `[{name, email, organization_code}, ...]`. **Tanpa
+  password** (di-generate server). Maks **100 item/request** (`400 BATCH_TOO_LARGE`); array kosong /
+  bukan array → `400`.
+- **Bisnis logic (model PARTIAL SUCCESS — 1 item gagal TIDAK membatalkan batch):**
+  1. `RequireRole(admin)` gate.
+  2. Untuk tiap item (berurutan, independen):
+     - Validasi `name/email/organization_code` wajib + format email → gagal `VALIDATION_ERROR`.
+     - Duplikat email **dalam batch** (case-insensitive) → gagal `DUPLICATE_IN_BATCH`.
+     - Email sudah ada di DB (`ExistsByEmail`) → gagal `EMAIL_TAKEN`.
+     - **Generate password acak** (crypto/rand, 14 char) → **bcrypt** → `Create` (role selalu
+       `user`; org dari item — admin global boleh lintas-org).
+  3. Kumpulkan hasil per-item. **Tanpa transaksi** (tiap item mandiri).
+- **Response:** selalu `200` bila request diproses. Data `BulkRegisterResponse`:
+  `{ total, success_count, failed_count, results:[{index, email, status:"created|failed", id?,
+  temp_password?, error_code?, error? }] }`. `temp_password` **hanya** pada item sukses (ditampilkan
+  **sekali** agar admin bisa dibagikan).
+- **Security:** password plaintext hanya di **response** (never di-log; slog tak pernah memuat
+  password). Prod: GORM SQL log mati (level Warn) → hash pun tak ter-log.
+- **Logging:** INFO `bulk register: attempt/done` (count/success/failed), INFO per user dibuat,
+  ERROR pada kegagalan tak terduga (exists/hash/create).
 - **Request (`authdto.LoginRequest`):** `email`, `password`.
 - **Bisnis logic:**
   1. `FindByEmail` (scope aktif). 2. `bcrypt.CompareHashAndPassword`.

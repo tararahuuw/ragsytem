@@ -34,6 +34,7 @@ type Config struct {
 // Service holds authentication business logic.
 type Service interface {
 	Register(ctx context.Context, req authdto.RegisterRequest) (userdto.UserResponse, error)
+	BulkRegister(ctx context.Context, items []authdto.BulkRegisterItem) authdto.BulkRegisterResponse
 	Login(ctx context.Context, req authdto.LoginRequest) (authdto.TokenResponse, error)
 	Refresh(ctx context.Context, req authdto.RefreshRequest) (authdto.TokenResponse, error)
 }

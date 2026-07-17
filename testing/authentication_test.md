@@ -111,6 +111,31 @@ Target = user biasa `UID` (buat via admin dulu). Semua via header sesuai.
 | d | admin, ubah role **diri sendiri** | `400 CANNOT_CHANGE_OWN_ROLE` |
 | e | admin, user id tak ada | `404 USER_NOT_FOUND` |
 
+### TC-16 — Bulk register (partial success, admin)
+Body = array 5 user: 2 valid, 1 duplikat-dalam-batch, 1 email sudah ada, 1 email invalid.
+```bash
+curl -s -X POST "$BASE_URL/auth/register/bulk" -H "Authorization: Bearer $ADMIN_TOKEN" \
+  -H "Content-Type: application/json" -d '[
+   {"name":"A","email":"a'$(date +%s)'@pln.co.id","organization_code":"pln"},
+   {"name":"B","email":"b'$(date +%s)'@icon.id","organization_code":"icon"},
+   {"name":"Dup","email":"a'$(date +%s)'@pln.co.id","organization_code":"pln"},
+   {"name":"Exist","email":"<email_admin_yg_ada>","organization_code":"icon"},
+   {"name":"Bad","email":"not-an-email","organization_code":"pln"}]'
+```
+- **Ekspektasi:** `200`; `success_count=2`, `failed_count=3`; `results[]` memuat per-item
+  status + `error_code` (`DUPLICATE_IN_BATCH`, `EMAIL_TAKEN`, `VALIDATION_ERROR`);
+  item sukses punya `temp_password`.
+- **Lanjutan:** login salah satu user sukses dengan `temp_password` → `200`; role user =`user`.
+
+### TC-17 — Bulk register gating & guard
+| Sub | Kondisi | Ekspektasi |
+|---|---|---|
+| a | tanpa token | `401` |
+| b | token user biasa | `403 FORBIDDEN_ROLE` |
+| c | array kosong `[]` | `400 VALIDATION_ERROR` |
+| d | body bukan array | `400` |
+| e | > 100 item | `400 BATCH_TOO_LARGE` |
+
 ### TC-15 — Promote user → admin (end-to-end)
 ```bash
 curl -s -X PATCH "$BASE_URL/users/$UID/role" -H "Authorization: Bearer $ADMIN_TOKEN" \

@@ -1,5 +1,50 @@
 basePath: /api/v1
 definitions:
+  auth.BulkRegisterItem:
+    properties:
+      email:
+        example: john@example.com
+        type: string
+      name:
+        example: John Doe
+        type: string
+      organization_code:
+        example: pln
+        type: string
+    type: object
+  auth.BulkRegisterResponse:
+    properties:
+      failed_count:
+        type: integer
+      results:
+        items:
+          $ref: '#/definitions/auth.BulkRegisterResultItem'
+        type: array
+      success_count:
+        type: integer
+      total:
+        type: integer
+    type: object
+  auth.BulkRegisterResultItem:
+    properties:
+      email:
+        type: string
+      error:
+        type: string
+      error_code:
+        type: string
+      id:
+        type: integer
+      index:
+        type: integer
+      status:
+        description: created | failed
+        example: created
+        type: string
+      temp_password:
+        description: shown once, only on success
+        type: string
+    type: object
   auth.LoginRequest:
     properties:
       email:
@@ -271,6 +316,51 @@ paths:
       security:
       - BearerAuth: []
       summary: Register a new user (admin only)
+      tags:
+      - auth
+  /auth/register/bulk:
+    post:
+      consumes:
+      - application/json
+      description: 'Admin-only. Registers many users at once (role always "user",
+        passwords auto-generated & returned once). Partial success: per-item result,
+        failures don''t abort the batch.'
+      parameters:
+      - description: Array of users to register
+        in: body
+        name: payload
+        required: true
+        schema:
+          items:
+            $ref: '#/definitions/auth.BulkRegisterItem'
+          type: array
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.BaseResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/auth.BulkRegisterResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Bulk register users (admin only)
       tags:
       - auth
   /healthz:

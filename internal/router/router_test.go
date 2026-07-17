@@ -120,6 +120,8 @@ func TestRBAC_AdminOnlyRoutes(t *testing.T) {
 	}{
 		{"register no token", http.MethodPost, "/api/v1/auth/register", "", http.StatusUnauthorized},
 		{"register user role", http.MethodPost, "/api/v1/auth/register", "Bearer " + userTok, http.StatusForbidden},
+		{"bulk register no token", http.MethodPost, "/api/v1/auth/register/bulk", "", http.StatusUnauthorized},
+		{"bulk register user role", http.MethodPost, "/api/v1/auth/register/bulk", "Bearer " + userTok, http.StatusForbidden},
 		{"delete no token", http.MethodDelete, "/api/v1/users/1", "", http.StatusUnauthorized},
 		{"delete user role", http.MethodDelete, "/api/v1/users/1", "Bearer " + userTok, http.StatusForbidden},
 		{"role change no token", http.MethodPatch, "/api/v1/users/1/role", "", http.StatusUnauthorized},

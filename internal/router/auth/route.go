@@ -35,5 +35,9 @@ func Register(rg *gin.RouterGroup, cfg *config.Config, db *gorm.DB) {
 			middleware.JWTAuth(cfg),
 			middleware.RequireRole(rbac.RoleAdmin),
 			ctrl.Register)
+		group.POST("/register/bulk",
+			middleware.JWTAuth(cfg),
+			middleware.RequireRole(rbac.RoleAdmin),
+			ctrl.BulkRegister)
 	}
 }

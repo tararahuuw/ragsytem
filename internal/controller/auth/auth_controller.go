@@ -2,6 +2,7 @@ package auth
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -60,6 +61,43 @@ func (c *Controller) Register(ctx *gin.Context) {
 	}
 
 	response.Created(ctx, "user registered", user)
+}
+
+// BulkRegister godoc
+//
+//	@Summary		Bulk register users (admin only)
+//	@Description	Admin-only. Registers many users at once (role always "user", passwords auto-generated & returned once). Partial success: per-item result, failures don't abort the batch.
+//	@Tags			auth
+//	@Accept			json
+//	@Produce		json
+//	@Security		BearerAuth
+//	@Param			payload	body		[]authdto.BulkRegisterItem	true	"Array of users to register"
+//	@Success		200		{object}	response.BaseResponse{data=authdto.BulkRegisterResponse}
+//	@Failure		400		{object}	response.ErrorResponse
+//	@Failure		401		{object}	response.ErrorResponse
+//	@Failure		403		{object}	response.ErrorResponse
+//	@Router			/auth/register/bulk [post]
+func (c *Controller) BulkRegister(ctx *gin.Context) {
+	log := logger.FromContext(ctx.Request.Context())
+
+	var items []authdto.BulkRegisterItem
+	if err := ctx.ShouldBindJSON(&items); err != nil {
+		log.Warn("bulk register: invalid payload", "error", err.Error())
+		response.ValidationError(ctx, "payload harus berupa array user yang valid", err.Error())
+		return
+	}
+	if len(items) == 0 {
+		response.ValidationError(ctx, "array user tidak boleh kosong", nil)
+		return
+	}
+	if len(items) > authsvc.MaxBulkUsers {
+		response.Error(ctx, http.StatusBadRequest,
+			fmt.Sprintf("maksimal %d user per request", authsvc.MaxBulkUsers), "BATCH_TOO_LARGE")
+		return
+	}
+
+	res := c.svc.BulkRegister(ctx.Request.Context(), items)
+	response.OK(ctx, "bulk register selesai", res)
 }
 
 // Login godoc

@@ -308,6 +308,8 @@ make run              # server :8080
 - [x] **RBAC (admin/user)**: role di JWT + `RequireRole`. Register & soft-delete **admin-only**;
       admin **global** (bypass tenant). Bootstrap admin manual via SQL.
 - [x] **Ubah role via API**: `PATCH /users/{id}/role` (admin-only, admin/user, self-guard).
+- [x] **Bulk register**: `POST /auth/register/bulk` (admin-only, array of user, partial success,
+      password auto-generate, maks 100/req).
 - [x] **Upload file besar (chunked)** ala elArch: `POST /uploads/chunk` → MinIO → compose →
       presigned; validasi (PDF/MIME/nama), dedup SHA-256, kuota per-role, cleanup async.
 - [x] **Upload production-hardened** (§8b): reset merge on failure, session janitor, temp-chunk
@@ -357,6 +359,13 @@ belum dilakukan (dedup pakai SHA klaim-client) — cukup untuk MVP.
 
 ## 9. Changelog keputusan (append di sini)
 
+- **2026-07-17** — **Bulk register** `POST /auth/register/bulk` (admin-only, via /rag-dev). Body =
+  **array of user** (`[]BulkRegisterItem` {name,email,organization_code}). Model **partial success**:
+  tiap item independen, gagal per-item (`VALIDATION_ERROR`/`DUPLICATE_IN_BATCH`/`EMAIL_TAKEN`) tak
+  membatalkan batch; response `BulkRegisterResponse` {total,success_count,failed_count,results[]}.
+  Password **auto-generate** (crypto/rand 14 char) → bcrypt, `temp_password` dikembalikan sekali di
+  response (never di-log). Role selalu `user`; org per-item (admin global). Cap 100/req
+  (`BATCH_TOO_LARGE`). File: `service/auth/bulk_register.go`.
 - **2026-07-17** — Dokumentasikan **3 core krusial** (upload · RAG consume API tim AI ·
   discussion/Q&A) di §1a. **Hardening produksi module upload** (§8b): reset `mergeStarted` saat
   compose gagal (anti session-poisoning), **janitor** evict sesi idle 30 mnt (anti memory leak),

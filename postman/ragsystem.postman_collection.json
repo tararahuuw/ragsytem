@@ -66,6 +66,23 @@
           }
         },
         {
+          "name": "Register (bulk, admin)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{access_token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "[\n  { \"name\": \"User A\", \"email\": \"usera@pln.co.id\", \"organization_code\": \"pln\" },\n  { \"name\": \"User B\", \"email\": \"userb@icon.id\", \"organization_code\": \"icon\" }\n]",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{base_url}}/auth/register/bulk", "host": ["{{base_url}}"], "path": ["auth", "register", "bulk"] },
+            "description": "ADMIN ONLY. Body = array of user (tanpa password; di-generate server). Partial success: response berisi results[] per-item dengan temp_password pada yang sukses. Maks 100 item. 401 tanpa token, 403 bukan admin, 400 array kosong/terlalu besar."
+          }
+        },
+        {
           "name": "Login",
           "event": [
             {
