@@ -7,6 +7,8 @@ Dibangun dengan **Go + Gin + GORM**, arsitektur berlapis yang sederhana namun ra
 - **Go 1.26**
 - **Gin** — HTTP framework
 - **GORM** — ORM (PostgreSQL)
+- **JWT** (golang-jwt) — auth + RBAC + multi-tenant (organizationCode)
+- **MinIO** (minio-go) — object storage untuk upload file besar (chunked + compose)
 - **swaggo/swag** — dokumentasi API (Swagger/OpenAPI)
 - **PostgreSQL 16**
 

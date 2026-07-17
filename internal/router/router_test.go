@@ -41,7 +41,7 @@ func TestHealthz_OK(t *testing.T) {
 	gdb, mock := newMockGorm(t)
 	mock.ExpectPing() // DB reachable
 
-	r := router.New(&config.Config{AppEnv: "test"}, gdb)
+	r := router.New(&config.Config{AppEnv: "test"}, gdb, nil)
 
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/healthz", nil)
@@ -67,7 +67,7 @@ func TestHealthz_DBDown(t *testing.T) {
 	gdb, mock := newMockGorm(t)
 	mock.ExpectPing().WillReturnError(sqlmock.ErrCancelled) // DB unreachable
 
-	r := router.New(&config.Config{AppEnv: "test"}, gdb)
+	r := router.New(&config.Config{AppEnv: "test"}, gdb, nil)
 
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/healthz", nil)
@@ -84,7 +84,7 @@ func TestHealthz_DBDown(t *testing.T) {
 func TestUsers_RequireAuth(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	gdb, _ := newMockGorm(t)
-	r := router.New(&config.Config{AppEnv: "test", JWTSecret: "test-secret"}, gdb)
+	r := router.New(&config.Config{AppEnv: "test", JWTSecret: "test-secret"}, gdb, nil)
 
 	cases := []struct {
 		method, path string
@@ -110,7 +110,7 @@ func TestRBAC_AdminOnlyRoutes(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	secret := "test-secret"
 	gdb, _ := newMockGorm(t)
-	r := router.New(&config.Config{AppEnv: "test", JWTSecret: secret}, gdb)
+	r := router.New(&config.Config{AppEnv: "test", JWTSecret: secret}, gdb, nil)
 
 	userTok, _ := appjwt.Generate(secret, 1, "u@x.com", "pln", "user", appjwt.TypeAccess, time.Minute)
 
@@ -142,7 +142,7 @@ func TestSwaggerRouteRegistered(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	gdb, _ := newMockGorm(t)
 
-	r := router.New(&config.Config{AppEnv: "test"}, gdb)
+	r := router.New(&config.Config{AppEnv: "test"}, gdb, nil)
 
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/swagger/index.html", nil)

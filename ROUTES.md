@@ -25,6 +25,7 @@ Base URL: `http://localhost:8080/api/v1` · Envelope: `internal/response` (`Base
 | PUT | `/users/{id}` | user | Bearer | Update name/password (user: se-org · admin: global) |
 | PATCH | `/users/{id}/role` | user | **admin** | Ubah role user (admin/user), admin global |
 | DELETE | `/users/{id}` | user | **admin** | Soft delete (admin global) |
+| POST | `/uploads/chunk` | upload | Bearer | Upload 1 chunk file besar (resumable, PDF) |
 
 > **Auth**: `–` publik · `Bearer` butuh `Authorization: Bearer <access_token>` ·
 > **admin** butuh access token dengan role `admin`.
@@ -166,6 +167,40 @@ Base URL: `http://localhost:8080/api/v1` · Envelope: `internal/response` (`Base
   `404 USER_NOT_FOUND`.
 
 ---
+
+## Module: upload  🔒 (Bearer) — large-file chunked upload
+
+Mekanisme mengikuti elArch: file besar dipecah jadi chunk, tiap chunk di-stream ke **MinIO**,
+server menggabung via **compose** (server-side, tanpa download-ulang). "Bulk" = banyak sesi chunk
+paralel. Infra: MinIO (`internal/infra/minio`), state sesi in-memory (`sync.Map` + `done` channel).
+
+### POST `/uploads/chunk`
+- **Tujuan:** menerima 1 potongan file; menggabung otomatis saat semua chunk lengkap.
+- **Auth:** Bearer (semua user terautentikasi, dibatasi kuota). `orgCode` dari token → path objek.
+- **Request (multipart/form-data):** `file` (chunk biner), `sessionId`, `fileName` (.pdf),
+  `chunkIndex` (0-based), `totalChunks`, `fileSize`, `sha256` (opsional, dedup),
+  `chunkSize` (opsional), `forceUpload` (opsional).
+- **Bisnis logic:**
+  1. **chunk 0 gate:** cek **kuota** (per-role: bulanan+lifetime → `429 QUOTA_EXCEEDED`) →
+     **dedup SHA-256** (`409 DUPLICATE_FILE` bila konten identik sudah pernah selesai) →
+     validasi ukuran (≤ cap), jumlah chunk, **min chunk 5 MiB** untuk multi-part
+     (`400 CHUNK_TOO_SMALL`), nama file (whitelist, anti path-traversal → `400 INVALID_FILENAME`),
+     ekstensi `.pdf` + anti double-extension, **MIME sniff** wajib `application/pdf`
+     (`400 INVALID_FILE_TYPE`).
+  2. Stream chunk → MinIO `temp_chunks/{orgCode}/{sessionId}/{index}`.
+  3. Track state sesi (paralel-safe); saat semua chunk hadir → **`ComposeObject`** →
+     `uploads/{orgCode}/{sessionId}.pdf`. Koordinasi merge pakai `atomic CAS` + channel `done`
+     (non-blocking; perbaikan atas `waitForMerge` elArch yang busy-wait).
+  4. Simpan `upload_log` (audit + dedup) + increment kuota; **cleanup** chunk async (goroutine
+     + `recover`, delay 5s).
+  5. Balikan **presigned URL** (exp konfig, default 3 jam) sebagai preview.
+- **Response:** `200` — data `ChunkResult`. Saat belum lengkap: `upload_complete=false`. Saat
+  lengkap: `upload_complete=true` + `object_path` + `preview_url`.
+  Error: `400` (VALIDATION_ERROR/CHUNK_TOO_SMALL/FILE_TOO_LARGE/INVALID_FILENAME/INVALID_FILE_TYPE) ·
+  `401` · `409 DUPLICATE_FILE` · `429 QUOTA_EXCEEDED` · `500 INTERNAL_ERROR`.
+- **Aturan penting:** **chunk (non-terakhir) wajib ≥ 5 MiB** (batas S3/MinIO multipart). PDF-only
+  (MVP). Ingest RAG (OCR/embed) adalah **langkah terpisah** berikutnya.
+- **Logging:** INFO chunk stored / completed · WARN duplikat/kuota/MIME · ERROR compose/store.
 
 ## Konvensi menulis entri baru
 

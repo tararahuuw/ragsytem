@@ -91,6 +91,25 @@ definitions:
         example: false
         type: boolean
     type: object
+  upload.ChunkResult:
+    properties:
+      chunk_index:
+        type: integer
+      file_name:
+        type: string
+      object_path:
+        type: string
+      preview_url:
+        type: string
+      session_id:
+        type: string
+      sha256:
+        type: string
+      total_chunks:
+        type: integer
+      upload_complete:
+        type: boolean
+    type: object
   user.UpdateRoleRequest:
     properties:
       role:
@@ -271,6 +290,88 @@ paths:
       summary: Health check
       tags:
       - health
+  /uploads/chunk:
+    post:
+      consumes:
+      - multipart/form-data
+      description: Streams a single chunk to object storage; the server merges chunks
+        once all are received. PDF only, max size per config.
+      parameters:
+      - description: Chunk binary
+        in: formData
+        name: file
+        required: true
+        type: file
+      - description: Upload session id (stable across chunks)
+        in: formData
+        name: sessionId
+        required: true
+        type: string
+      - description: Original file name (.pdf)
+        in: formData
+        name: fileName
+        required: true
+        type: string
+      - description: 0-based chunk index
+        in: formData
+        name: chunkIndex
+        required: true
+        type: integer
+      - description: Total number of chunks
+        in: formData
+        name: totalChunks
+        required: true
+        type: integer
+      - description: Total file size in bytes
+        in: formData
+        name: fileSize
+        required: true
+        type: integer
+      - description: SHA-256 of the whole file (for dedup)
+        in: formData
+        name: sha256
+        type: string
+      - description: Chunk size in bytes (for count validation)
+        in: formData
+        name: chunkSize
+        type: integer
+      - description: Bypass duplicate check
+        in: formData
+        name: forceUpload
+        type: boolean
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.BaseResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/upload.ChunkResult'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Upload one file chunk (resumable large upload)
+      tags:
+      - upload
   /users/{id}:
     delete:
       description: Admin-only. Soft-deletes a user (sets deleted_at). Admin is global

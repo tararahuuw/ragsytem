@@ -27,6 +27,17 @@ type Config struct {
 	JWTSecret     string
 	JWTAccessTTL  time.Duration
 	JWTRefreshTTL time.Duration
+
+	// MinIO / object storage
+	MinioEndpoint  string
+	MinioAccessKey string
+	MinioSecretKey string
+	MinioBucket    string
+	MinioUseSSL    bool
+
+	// Upload
+	UploadMaxFileSize   int64         // bytes; hard cap per file
+	UploadPreviewExpiry time.Duration // presigned URL lifetime
 }
 
 // Load reads configuration from the environment. It silently loads a .env file
@@ -50,6 +61,15 @@ func Load() *Config {
 		JWTSecret:     getEnv("JWT_SECRET", "change-me-in-production"),
 		JWTAccessTTL:  getEnvDuration("JWT_ACCESS_TTL", 15*time.Minute),
 		JWTRefreshTTL: getEnvDuration("JWT_REFRESH_TTL", 7*24*time.Hour),
+
+		MinioEndpoint:  getEnv("MINIO_ENDPOINT", "localhost:9000"),
+		MinioAccessKey: getEnv("MINIO_ACCESS_KEY", "minioadmin"),
+		MinioSecretKey: getEnv("MINIO_SECRET_KEY", "minioadmin"),
+		MinioBucket:    getEnv("MINIO_BUCKET", "ragsystem"),
+		MinioUseSSL:    getEnv("MINIO_USE_SSL", "false") == "true",
+
+		UploadMaxFileSize:   getEnvInt64("UPLOAD_MAX_FILE_SIZE", 500*1024*1024), // 500 MB (ikut elArch)
+		UploadPreviewExpiry: getEnvDuration("UPLOAD_PREVIEW_EXPIRY", 3*time.Hour),
 	}
 }
 
@@ -74,6 +94,16 @@ func (c *Config) IsProduction() bool {
 func getEnv(key, fallback string) string {
 	if v, ok := os.LookupEnv(key); ok && v != "" {
 		return v
+	}
+	return fallback
+}
+
+// getEnvInt64 reads an integer env var, falling back on empty/invalid input.
+func getEnvInt64(key string, fallback int64) int64 {
+	if v, ok := os.LookupEnv(key); ok && v != "" {
+		if n, err := strconv.ParseInt(v, 10, 64); err == nil {
+			return n
+		}
 	}
 	return fallback
 }

@@ -6,6 +6,7 @@ import (
 
 	"github.com/tararahuuw/ragsytem/internal/config"
 	"github.com/tararahuuw/ragsytem/internal/database"
+	minioinfra "github.com/tararahuuw/ragsytem/internal/infra/minio"
 	"github.com/tararahuuw/ragsytem/internal/logger"
 	"github.com/tararahuuw/ragsytem/internal/router"
 
@@ -41,7 +42,13 @@ func main() {
 		os.Exit(1)
 	}
 
-	r := router.New(cfg, db)
+	store, err := minioinfra.New(cfg)
+	if err != nil {
+		slog.Error("failed to connect to object storage (minio)", "error", err)
+		os.Exit(1)
+	}
+
+	r := router.New(cfg, db, store)
 
 	slog.Info("server starting",
 		"app", cfg.AppName,

@@ -58,6 +58,7 @@ ragsytem/
 │   ├── response/              # BaseResponse, ErrorResponse + helper (Success/Error/...)
 │   ├── jwt/                   # generate/parse JWT (claims: user_id, email, organization_code, role, token_type)
 │   ├── rbac/                  # konstanta role (RoleAdmin, RoleUser)
+│   ├── infra/minio/           # wrapper MinIO (Put, Compose, List, Remove, Exists, Presign)
 │   ├── middleware/            # cors, request_id, access_log, recovery, auth (JWTAuth, RequireRole, CurrentOrgCode/Role/UserID)
 │   ├── router/                # router.go (aggregator) + <module>/route.go
 │   │   ├── health/route.go    #   Register(v1, db)
@@ -69,8 +70,8 @@ ragsytem/
 │   │   ├── health/  · auth/  · user/
 │   ├── repository/<module>/   # package <module> → Repository, NewRepository(db)
 │   │   ├── health/  · user/   #   auth pakai repository/user (GORM, soft delete)
-│   ├── model/<module>/        # entity per-module: model/user/user.go (package user)
-│   └── dto/<module>/          # DTO per-module: dto/auth/, dto/user/, dto/health/
+│   ├── model/<module>/        # entity per-module: model/user/, model/upload/
+│   └── dto/<module>/          # DTO per-module: dto/auth/, dto/user/, dto/health/, dto/upload/
 ├── testing/                   # playbook test API (.md) per rumpun endpoint
 ├── postman/                   # collection + environment (import-ready) — sinkron dgn API
 ├── ROUTES.md                  # katalog bisnis logic per-endpoint (living doc)
@@ -259,6 +260,8 @@ Semua via environment variable (lihat `.env.example`). Default aman untuk local.
 | `DB_HOST`/`DB_PORT`/`DB_USER`/`DB_PASSWORD`/`DB_NAME`/`DB_SSLMODE` | localhost/5432/postgres/postgres/ragsystem/disable | PostgreSQL |
 | `JWT_SECRET` | change-me-in-production | kunci tanda tangan JWT (HS256) |
 | `JWT_ACCESS_TTL` / `JWT_REFRESH_TTL` | 15m / 168h | umur access & refresh token (durasi Go atau detik) |
+| `MINIO_ENDPOINT`/`MINIO_ACCESS_KEY`/`MINIO_SECRET_KEY`/`MINIO_BUCKET`/`MINIO_USE_SSL` | localhost:9000/minioadmin/minioadmin/ragsystem/false | Object storage (upload) |
+| `UPLOAD_MAX_FILE_SIZE` / `UPLOAD_PREVIEW_EXPIRY` | 524288000 (500MB) / 3h | cap ukuran file & umur presigned URL |
 
 ---
 
@@ -288,9 +291,10 @@ make run              # server :8080
 - [x] **RBAC (admin/user)**: role di JWT + `RequireRole`. Register & soft-delete **admin-only**;
       admin **global** (bypass tenant). Bootstrap admin manual via SQL.
 - [x] **Ubah role via API**: `PATCH /users/{id}/role` (admin-only, admin/user, self-guard).
+- [x] **Upload file besar (chunked)** ala elArch: `POST /uploads/chunk` → MinIO → compose →
+      presigned; validasi (PDF/MIME/nama), dedup SHA-256, kuota per-role, cleanup async.
 - [ ] Auth lanjutan: forgot/reset password, revoke refresh token.
-- [ ] Domain `document` + upload file.
-- [ ] Ingestion (ekstraksi teks / chunking).
+- [ ] Ingestion RAG (ekstraksi teks / chunking / embedding) dari objek hasil upload.
 - [ ] Integrasi mesin embedding + vector store.
 - [ ] Endpoint chat / Q&A (RAG) + riwayat percakapan.
 
@@ -338,6 +342,17 @@ make run              # server :8080
   global** (bypass isolasi tenant lintas org); role `user` tetap tenant-scoped. Bootstrap admin
   **manual via SQL** (`UPDATE users SET role='admin' WHERE email=...`) — tak ada auto-seed.
   Unit test: `RequireRole`, router RBAC gating (register/delete: 401 no-token, 403 non-admin).
+- **2026-07-17** — **Upload file besar (chunked) ala elArch (via /rag-dev)**. Infra baru
+  **MinIO** (`internal/infra/minio`, SDK `minio-go`). Module `upload`
+  (controller/service/repository/dto/model/router). Endpoint `POST /uploads/chunk` (JWT):
+  stream chunk → MinIO `temp_chunks/{org}/{sid}/{i}`, **compose** server-side →
+  `uploads/{org}/{sid}.pdf`, balikan **presigned URL**. Validasi: PDF-only + **MIME sniff**
+  (`mimetype`), whitelist nama (anti path-traversal/double-ext), cap 500MB, **min chunk 5 MiB**
+  (batas S3 compose). **Dedup SHA-256** (`upload_logs`), **kuota per-role** bulanan+lifetime
+  (`upload_quota_configs`/`usages`, di-seed migrate). Koordinasi merge **non-blocking** (atomic
+  CAS + channel `done`) — perbaikan atas `waitForMerge` elArch. Cleanup chunk async (goroutine +
+  recover). Smoke test terbukti **byte-perfect** (download presigned == sha256 asli). Unit test
+  validasi nama/ekstensi. Config MinIO + upload di `config`/`.env`; docker-compose + MinIO.
 - **2026-07-17** — Endpoint **ubah role** `PATCH /users/{id}/role` (admin-only via
   `RequireRole(admin)`): set role `admin`/`user` (validasi `rbac.IsValidRole` → 400
   `INVALID_ROLE`), admin global (tanpa tenant check), **self-guard** (tak bisa ubah role sendiri →

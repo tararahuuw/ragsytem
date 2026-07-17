@@ -80,6 +80,7 @@ Ringkasan: 1 PASS, 1 FAIL
 | File | Module | Status |
 |---|---|---|
 | `healthcheck_test.md` | Health check | READY |
-| `authentication_test.md` | Auth (register/login/refresh) + User (me/get/update/soft-delete), JWT + multi-tenant | READY |
+| `authentication_test.md` | Auth (register/login/refresh) + User (me/get/update/role/soft-delete), JWT + RBAC + multi-tenant | READY |
+| `upload_test.md` | Upload chunked file besar (PDF) → MinIO → compose → presigned | READY |
 
 Tambahkan baris baru di tabel ini setiap kali membuat playbook baru.

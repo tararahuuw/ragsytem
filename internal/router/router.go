@@ -7,17 +7,19 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/tararahuuw/ragsytem/internal/config"
+	minioinfra "github.com/tararahuuw/ragsytem/internal/infra/minio"
 	"github.com/tararahuuw/ragsytem/internal/middleware"
 
 	authroute "github.com/tararahuuw/ragsytem/internal/router/auth"
 	healthroute "github.com/tararahuuw/ragsytem/internal/router/health"
+	uploadroute "github.com/tararahuuw/ragsytem/internal/router/upload"
 	userroute "github.com/tararahuuw/ragsytem/internal/router/user"
 )
 
 // New builds the Gin engine: global middleware, swagger UI, and versioned routes.
 // Each module registers itself (and wires its own dependencies) via its Register
 // function, keeping modules self-contained.
-func New(cfg *config.Config, db *gorm.DB) *gin.Engine {
+func New(cfg *config.Config, db *gorm.DB, store *minioinfra.Client) *gin.Engine {
 	if cfg.IsProduction() {
 		gin.SetMode(gin.ReleaseMode)
 	}
@@ -38,6 +40,7 @@ func New(cfg *config.Config, db *gorm.DB) *gin.Engine {
 	healthroute.Register(v1, db)
 	authroute.Register(v1, cfg, db)
 	userroute.Register(v1, cfg, db)
+	uploadroute.Register(v1, cfg, db, store)
 
 	return r
 }

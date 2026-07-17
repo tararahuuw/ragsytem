@@ -238,6 +238,132 @@ const docTemplate = `{
                 }
             }
         },
+        "/uploads/chunk": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Streams a single chunk to object storage; the server merges chunks once all are received. PDF only, max size per config.",
+                "consumes": [
+                    "multipart/form-data"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "upload"
+                ],
+                "summary": "Upload one file chunk (resumable large upload)",
+                "parameters": [
+                    {
+                        "type": "file",
+                        "description": "Chunk binary",
+                        "name": "file",
+                        "in": "formData",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Upload session id (stable across chunks)",
+                        "name": "sessionId",
+                        "in": "formData",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Original file name (.pdf)",
+                        "name": "fileName",
+                        "in": "formData",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "0-based chunk index",
+                        "name": "chunkIndex",
+                        "in": "formData",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Total number of chunks",
+                        "name": "totalChunks",
+                        "in": "formData",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Total file size in bytes",
+                        "name": "fileSize",
+                        "in": "formData",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "SHA-256 of the whole file (for dedup)",
+                        "name": "sha256",
+                        "in": "formData"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Chunk size in bytes (for count validation)",
+                        "name": "chunkSize",
+                        "in": "formData"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Bypass duplicate check",
+                        "name": "forceUpload",
+                        "in": "formData"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/response.BaseResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/upload.ChunkResult"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/users/me": {
             "get": {
                 "security": [
@@ -691,6 +817,35 @@ const docTemplate = `{
                 "success": {
                     "type": "boolean",
                     "example": false
+                }
+            }
+        },
+        "upload.ChunkResult": {
+            "type": "object",
+            "properties": {
+                "chunk_index": {
+                    "type": "integer"
+                },
+                "file_name": {
+                    "type": "string"
+                },
+                "object_path": {
+                    "type": "string"
+                },
+                "preview_url": {
+                    "type": "string"
+                },
+                "session_id": {
+                    "type": "string"
+                },
+                "sha256": {
+                    "type": "string"
+                },
+                "total_chunks": {
+                    "type": "integer"
+                },
+                "upload_complete": {
+                    "type": "boolean"
                 }
             }
         },
