@@ -240,10 +240,47 @@
           }
         }
       ]
+    },
+    {
+      "name": "document",
+      "description": "Dokumen hasil upload (dari upload_logs). User biasa hanya org-nya; admin lihat semua. Login dulu untuk {{access_token}}.",
+      "item": [
+        {
+          "name": "List",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }],
+            "url": { "raw": "{{base_url}}/documents", "host": ["{{base_url}}"], "path": ["documents"] },
+            "description": "List dokumen. Scope by org token (admin: semua). Tiap item punya preview_url."
+          }
+        },
+        {
+          "name": "Get by ID",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "var j={}; try{ j=pm.response.json(); }catch(e){}",
+                  "if (j.data && j.data.preview_url) { pm.environment.set('document_preview_url', j.data.preview_url); }"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }],
+            "url": { "raw": "{{base_url}}/documents/{{document_id}}", "host": ["{{base_url}}"], "path": ["documents", "{{document_id}}"] },
+            "description": "Detail 1 dokumen + presigned preview_url (bisa dibuka untuk download). 403 kalau beda org, 404 kalau tak ada."
+          }
+        }
+      ]
     }
   ],
   "variable": [
     { "key": "upload_session_id", "value": "", "type": "string" },
+    { "key": "document_id", "value": "", "type": "string" },
     { "key": "base_url", "value": "http://localhost:8080/api/v1", "type": "string" }
   ]
 }

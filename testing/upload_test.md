@@ -1,6 +1,7 @@
-# Upload (Chunked Large File) API Test Playbook
+# Upload + Document API Test Playbook
 
-**Module:** upload — `POST /uploads/chunk` (chunked → MinIO → compose → presigned).
+**Module:** upload — `POST /uploads/chunk` (chunked → MinIO → compose → presigned) +
+document — `GET /documents`, `GET /documents/{id}` (baca hasil upload, tenant-scoped).
 **Status:** ✅ READY
 
 ## Environment
@@ -75,6 +76,24 @@ Tanpa header Authorization.
 ### TC-08 — Kuota habis → 429 (opsional)
 Turunkan limit role di `upload_quota_configs` (dev), lalu upload melebihi limit.
 - **Ekspektasi:** `429` code `QUOTA_EXCEEDED`.
+
+### TC-09 — FLOW: upload → get document → verifikasi sesuai
+Membuktikan dokumen hasil upload benar-benar bisa didapat & cocok (module `document`).
+1. Jalankan TC-01 (upload sukses), catat `$SHA`, `$FN` (fileName), `$SZ` (fileSize).
+2. **List** dan temukan dokumen tsb:
+   ```bash
+   curl -s "$BASE_URL/documents" -H "Authorization: Bearer $TOK" \
+     | python3 -c "import sys,json;d=json.load(sys.stdin)['data'];m=[x for x in d if x['sha256']=='$SHA'];print(m[0]['id'] if m else 'NOT FOUND')"
+   ```
+   - **Ekspektasi:** dokumen ketemu; `file_name==$FN`, `file_size==$SZ`, `organization_code` sesuai
+     token, `preview_url` terisi.
+3. **Get one** `GET /documents/<id>` → detail cocok (name/size/sha/total_chunks/uploaded_by).
+4. **Download** `preview_url` → sha256 file terunduh **==** `$SHA` (byte-perfect, dokumen valid).
+
+### TC-10 — Document tenant guard (security)
+- User org A **tidak** melihat dokumen org B di `GET /documents` (list ter-scope org token).
+- User org A `GET /documents/<id_doc_org_B>` → `403 FORBIDDEN_ORGANIZATION`. Admin → `200` (bypass).
+- Tanpa token → `401`. Id tak ada → `404 DOCUMENT_NOT_FOUND`. Id invalid → `400`.
 
 ---
 

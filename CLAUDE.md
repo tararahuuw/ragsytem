@@ -314,6 +314,8 @@ make run              # server :8080
       presigned; validasi (PDF/MIME/nama), dedup SHA-256, kuota per-role, cleanup async.
 - [x] **Upload production-hardened** (§8b): reset merge on failure, session janitor, temp-chunk
       lifecycle, body-size cap, per-user object path. Full test 39/39.
+- [x] **Document (baca hasil upload)**: `GET /documents` (list, user: org sendiri · admin: semua) +
+      `GET /documents/{id}` (detail + presigned download), tenant-scoped. Sumber `upload_logs`.
 - [ ] **Core #2 — RAG consume API tim AI**: ingest dokumen hasil upload + endpoint query.
 - [ ] **Core #3 — Discussion/Q&A**: chat terhadap dokumen + riwayat percakapan (per user/org).
 - [ ] Auth lanjutan: forgot/reset password, revoke refresh token.
@@ -359,6 +361,12 @@ belum dilakukan (dedup pakai SHA klaim-client) — cukup untuk MVP.
 
 ## 9. Changelog keputusan (append di sini)
 
+- **2026-07-17** — **Module `document`** (baca hasil upload, via /rag-dev): `GET /documents`
+  (list, `user`→org sendiri · `admin`→semua org/bypass) + `GET /documents/{id}` (detail +
+  presigned download URL, `404 DOCUMENT_NOT_FOUND`/`403 FORBIDDEN_ORGANIZATION`). Sumber data =
+  `upload_logs` status completed (module baca terpisah dari upload/tulis); butuh MinIO client
+  untuk presign → `router.New(..., store)`. Flow test upload→get→download terbukti **byte-perfect**
+  + tenant guard aman. File: `internal/{dto,repository,service,controller,router}/document/`.
 - **2026-07-17** — **Bulk register** `POST /auth/register/bulk` (admin-only, via /rag-dev). Body =
   **array of user** (`[]BulkRegisterItem` {name,email,organization_code}). Model **partial success**:
   tiap item independen, gagal per-item (`VALIDATION_ERROR`/`DUPLICATE_IN_BATCH`/`EMAIL_TAKEN`) tak

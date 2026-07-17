@@ -27,6 +27,8 @@ Base URL: `http://localhost:8080/api/v1` · Envelope: `internal/response` (`Base
 | PATCH | `/users/{id}/role` | user | **admin** | Ubah role user (admin/user), admin global |
 | DELETE | `/users/{id}` | user | **admin** | Soft delete (admin global) |
 | POST | `/uploads/chunk` | upload | Bearer | Upload 1 chunk file besar (resumable, PDF) |
+| GET | `/documents` | document | Bearer | List dokumen (user: org sendiri · admin: semua) |
+| GET | `/documents/{id}` | document | Bearer | Detail 1 dokumen + presigned URL (tenant-scoped) |
 
 > **Auth**: `–` publik · `Bearer` butuh `Authorization: Bearer <access_token>` ·
 > **admin** butuh access token dengan role `admin`.
@@ -223,6 +225,29 @@ paralel. Infra: MinIO (`internal/infra/minio`), state sesi in-memory (`sync.Map`
 - **Aturan penting:** **chunk (non-terakhir) wajib ≥ 5 MiB** (batas S3/MinIO multipart). PDF-only
   (MVP). Ingest RAG (OCR/embed) adalah **langkah terpisah** berikutnya.
 - **Logging:** INFO chunk stored / completed · WARN duplikat/kuota/MIME · ERROR compose/store.
+
+## Module: document  🔒 (Bearer) — dokumen hasil upload
+
+Sumber data = `upload_logs` status `completed` (module baca; upload = module tulis). Presigned URL
+disertakan agar dokumen bisa **dilihat & diunduh**. **Tenant guard:** user biasa hanya org-nya;
+**admin global** (bypass, lihat semua org) — konsisten dgn pola RBAC kita.
+
+### GET `/documents`
+- **Tujuan:** daftar dokumen. **Auth:** Bearer.
+- **Bisnis logic:** role `user` → filter `organization_code = org(token)`; role `admin` → semua org
+  (scope kosong). Urut `created_at DESC`. Tiap item disertai presigned `preview_url`.
+- **Response:** `200` (data `[]DocumentResponse` {id, file_name, file_size, total_chunks, sha256,
+  organization_code, uploaded_by, object_path, preview_url, created_at}) · `401`.
+- **Catatan:** belum ada paginasi (kembalikan semua) — dokumen per-org diasumsikan bounded; tambah
+  page/limit bila perlu nanti.
+
+### GET `/documents/{id}`
+- **Tujuan:** detail 1 dokumen + URL unduh. **Auth:** Bearer.
+- **Bisnis logic:** cari by id (status completed). Tak ada → `404 DOCUMENT_NOT_FOUND`.
+  Jika non-admin & `doc.org != org(token)` → `403 FORBIDDEN_ORGANIZATION` (admin bypass).
+- **Response:** `200` (data `DocumentResponse` + `preview_url`) · `400 VALIDATION_ERROR` (id invalid)
+  · `401` · `403 FORBIDDEN_ORGANIZATION` · `404 DOCUMENT_NOT_FOUND`.
+- **Logging:** WARN not-found / cross-org · ERROR tak terduga.
 
 ## Konvensi menulis entri baru
 

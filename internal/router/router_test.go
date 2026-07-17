@@ -93,6 +93,8 @@ func TestUsers_RequireAuth(t *testing.T) {
 		{http.MethodGet, "/api/v1/users/1"},
 		{http.MethodPut, "/api/v1/users/1"},
 		{http.MethodDelete, "/api/v1/users/1"},
+		{http.MethodGet, "/api/v1/documents"},
+		{http.MethodGet, "/api/v1/documents/1"},
 	}
 	for _, tc := range cases {
 		w := httptest.NewRecorder()
