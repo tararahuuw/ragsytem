@@ -317,7 +317,10 @@ make run              # server :8080
 - [x] **Document (baca hasil upload)**: `GET /documents` (list, user: org sendiri · admin: semua) +
       `GET /documents/{id}` (detail + presigned download), tenant-scoped. Sumber `upload_logs`.
 - [ ] **Core #2 — RAG consume API tim AI**: ingest dokumen hasil upload + endpoint query.
-- [ ] **Core #3 — Discussion/Q&A**: chat terhadap dokumen + riwayat percakapan (per user/org).
+- [x] **Core #3 — Discussion/Q&A (skeleton)**: module `chat` (ask/sessions/detail/delete),
+      2 tabel (`chat_sessions`/`chat_messages`), session_id client-UUID, sliding-window 20,
+      per-user scope + orgCode filter. **AI client = mock** (`internal/infra/ai`), tinggal colok
+      endpoint tim AI (§8c) saat kontrak siap.
 - [ ] Auth lanjutan: forgot/reset password, revoke refresh token.
 
 > Referensi desain sistem serupa yang sudah jadi: lihat `../elarch/CLAUDE.md` (pola upload
@@ -359,7 +362,65 @@ belum dilakukan (dedup pakai SHA klaim-client) — cukup untuk MVP.
 
 ---
 
+## 8c. Core #2 & #3 — Integrasi Tim AI (fondasi riset dari elArch) 🎯
+
+> **Prinsip:** kita TIDAK membangun AI-nya. Divisi AI PLN menyediakan service (OCR, embedding,
+> vector store, ElasticSearch, LLM/RAG); backend kita **hanya meng-hit API mereka** (backend =
+> orchestrator/consumer). Diriset dari elArch (`../elarch`: `scheduler/.../OcrScheduler.java`,
+> `backend/.../ArchiveControllers.java`). **Semua di bawah ini masih perlu dikonfirmasi tim AI**
+> untuk instance kita (elArch pakai instance earsip-nya sendiri).
+
+**3 flow AI di elArch:**
+
+**A. INGESTION (Core #2) — masukin dokumen ke otak AI (async, via scheduler cron nightly)**
+- Kirim: `POST {ocr}/api/producer/send-payload-bulk` body
+  `{priority, data:[{file_name:"<path MinIO>", metadata:{...}}]}`. Batch 100.
+- Poll status: `POST {ocr}/api-ingestion/prod/search-id-es` body `{index_, list_id:[...]}`.
+- Lifecycle status dari AI: `Sudah masuk ES` → `…embedding` → `…summary` → `…semua proses`/`Done`.
+- **Insight #1:** elArch kirim **PATH file (MinIO) + metadata**, BUKAN byte — AI baca file dari
+  object storage **bersama**. **Insight #2:** pola **producer + poll** (async), bukan sinkron.
+
+**B. QUERY / Q&A (Core #3) — tanya ke AI (sinkron, backend)**
+- `POST {llm}/generate-answer` body `{query, classification_code:[...], thread_id}`.
+- `classification_code` = filter akses retrieval (AI hanya ambil dokumen yang user berhak).
+- `thread_id` = id percakapan. Jawaban (string) disimpan ke `ChatHistory` (tabel `tr_llm_history`).
+
+**C. OCR metadata on-demand (sinkron):** `POST {ocr}/metadata` `{file_name}` → metadata terekstrak.
+
+**Auth antar-service:** di kode elArch tak terlihat token/API-key (hanya Content-Type JSON) →
+kemungkinan dipercaya di level jaringan. **Perlu konfirmasi tim AI.**
+
+**Pemetaan ke ragsystem:** `upload_logs`/objek MinIO ≈ dokumen sumber. Untuk Core #2 perlu:
+kolom status ingest di dokumen (`ingest_status`, `ingest_sent_at`, `ingest_done_at`), trigger kirim
+(setelah upload / scheduler), poll status. Client AI dibuat sebagai **adapter** dengan
+URL/kontrak **configurable + mockable** (karena kontrak belum final). Filter retrieval kita =
+**organizationCode** (tenant), pengganti `classification_code`.
+
+**❓ WAJIB dikonfirmasi tim AI sebelum implementasi Core #2/#3:**
+1. URL & kontrak endpoint untuk sistem kita (elArch: `elarch.air.id/api/engine`, index
+   `earsip-production` — kita butuh namespace sendiri).
+2. Auth: perlu API key/token?
+3. Akses file: AI bisa baca MinIO kita? kirim path / presigned URL / byte?
+4. Filter retrieval by field arbitrer (mis. `organization_code`) untuk tenant isolation?
+5. Bentuk metadata + field id untuk korelasi status.
+
+---
+
 ## 9. Changelog keputusan (append di sini)
+
+- **2026-07-18** — **Core #3 — module `chat` (conversation/RAG Q&A, via /rag-dev)**. 2 tabel
+  `chat_sessions`+`chat_messages` (TableName eksplisit), `session_id` = UUID client (id sama =
+  lanjut percakapan), sliding-window 20 sesi/user, **scope per-user** + `organization_code` →
+  filter AI. Endpoint: `POST /chat/ask` (buat/lanjut, AI gagal → fallback ramah 200),
+  `GET /chat/sessions`, `GET|DELETE /chat/sessions/{id}` (hanya pemilik → else 404).
+  **AI client = adapter mock** (`internal/infra/ai`, interface `Client.Ask`); swap ke HTTP client
+  tim AI saat kontrak siap — kontrak endpoint kita tak berubah. Smoke test flow ask→history +
+  ownership/security **semua PASS**.
+- **2026-07-18** — **Riset integrasi Tim AI** (fondasi Task 2/3) direkam di §8c. Temuan elArch:
+  ingestion async via producer (`send-payload-bulk`) + poll status (`search-id-es`); query sinkron
+  (`generate-answer` + `classification_code` filter + `thread_id`); OCR metadata (`/metadata`).
+  elArch kirim path MinIO + metadata (AI baca file dari storage bersama). 5 pertanyaan ke tim AI
+  dicatat. Belum ngoding — menunggu kontrak API tim AI. Fokus berikut: kulik Task 3 (conversation).
 
 - **2026-07-17** — **Module `document`** (baca hasil upload, via /rag-dev): `GET /documents`
   (list, `user`→org sendiri · `admin`→semua org/bypass) + `GET /documents/{id}` (detail +

@@ -99,6 +99,61 @@ definitions:
         example: Bearer
         type: string
     type: object
+  chat.AskRequest:
+    properties:
+      question:
+        example: Ringkas dokumen laporan tahunan
+        type: string
+      session_id:
+        example: 3f2504e0-4f89-41d3-9a0c-0305e82c3301
+        type: string
+    required:
+    - question
+    - session_id
+    type: object
+  chat.AskResponse:
+    properties:
+      answer:
+        type: string
+      session_id:
+        type: string
+    type: object
+  chat.MessageResponse:
+    properties:
+      content:
+        type: string
+      created_at:
+        type: string
+      id:
+        type: integer
+      role:
+        example: assistant
+        type: string
+    type: object
+  chat.SessionDetailResponse:
+    properties:
+      id:
+        type: string
+      messages:
+        items:
+          $ref: '#/definitions/chat.MessageResponse'
+        type: array
+      organization_code:
+        type: string
+      title:
+        type: string
+    type: object
+  chat.SessionResponse:
+    properties:
+      created_at:
+        type: string
+      id:
+        type: string
+      title:
+        type: string
+      updated_at:
+        type: string
+    type: object
   document.DocumentResponse:
     properties:
       created_at:
@@ -393,6 +448,135 @@ paths:
       summary: Bulk register users (admin only)
       tags:
       - auth
+  /chat/ask:
+    post:
+      consumes:
+      - application/json
+      description: Sends a question to the AI/RAG service within a conversation (client-generated
+        session_id). Creates the session on first use. Scoped to the caller + their
+        organization.
+      parameters:
+      - description: Question payload
+        in: body
+        name: payload
+        required: true
+        schema:
+          $ref: '#/definitions/chat.AskRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.BaseResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/chat.AskResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Ask a question (RAG chat)
+      tags:
+      - chat
+  /chat/sessions:
+    get:
+      description: Lists the caller's conversation sessions (newest activity first).
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.BaseResponse'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/chat.SessionResponse'
+                  type: array
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List my conversations
+      tags:
+      - chat
+  /chat/sessions/{id}:
+    delete:
+      description: Deletes a conversation and its messages. Only the owner can delete
+        it.
+      parameters:
+      - description: Session ID (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.BaseResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete a conversation
+      tags:
+      - chat
+    get:
+      description: Returns a conversation and all its messages. Only the owner can
+        access it.
+      parameters:
+      - description: Session ID (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.BaseResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/chat.SessionDetailResponse'
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get one conversation (with messages)
+      tags:
+      - chat
   /documents:
     get:
       description: Lists uploaded documents. Regular users see only their own organization;

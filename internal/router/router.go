@@ -11,6 +11,7 @@ import (
 	"github.com/tararahuuw/ragsytem/internal/middleware"
 
 	authroute "github.com/tararahuuw/ragsytem/internal/router/auth"
+	chatroute "github.com/tararahuuw/ragsytem/internal/router/chat"
 	documentroute "github.com/tararahuuw/ragsytem/internal/router/document"
 	healthroute "github.com/tararahuuw/ragsytem/internal/router/health"
 	uploadroute "github.com/tararahuuw/ragsytem/internal/router/upload"
@@ -46,6 +47,7 @@ func New(cfg *config.Config, db *gorm.DB, store *minioinfra.Client) *gin.Engine 
 	userroute.Register(v1, cfg, db)
 	uploadroute.Register(v1, cfg, db, store)
 	documentroute.Register(v1, cfg, db, store)
+	chatroute.Register(v1, cfg, db)
 
 	return r
 }

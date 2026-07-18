@@ -9,6 +9,7 @@ import (
 	"gorm.io/gorm/logger"
 
 	"github.com/tararahuuw/ragsytem/internal/config"
+	chatmodel "github.com/tararahuuw/ragsytem/internal/model/chat"
 	uploadmodel "github.com/tararahuuw/ragsytem/internal/model/upload"
 	usermodel "github.com/tararahuuw/ragsytem/internal/model/user"
 	"github.com/tararahuuw/ragsytem/internal/rbac"
@@ -50,6 +51,8 @@ func Migrate(db *gorm.DB) error {
 		&uploadmodel.UploadLog{},
 		&uploadmodel.UploadQuotaConfig{},
 		&uploadmodel.UploadQuotaUsage{},
+		&chatmodel.Session{},
+		&chatmodel.Message{},
 	); err != nil {
 		return err
 	}

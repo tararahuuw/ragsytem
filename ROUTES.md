@@ -29,6 +29,10 @@ Base URL: `http://localhost:8080/api/v1` · Envelope: `internal/response` (`Base
 | POST | `/uploads/chunk` | upload | Bearer | Upload 1 chunk file besar (resumable, PDF) |
 | GET | `/documents` | document | Bearer | List dokumen (user: org sendiri · admin: semua) |
 | GET | `/documents/{id}` | document | Bearer | Detail 1 dokumen + presigned URL (tenant-scoped) |
+| POST | `/chat/ask` | chat | Bearer | Tanya RAG (buat/lanjut percakapan) |
+| GET | `/chat/sessions` | chat | Bearer | List percakapan milik user |
+| GET | `/chat/sessions/{id}` | chat | Bearer | Detail percakapan + pesan |
+| DELETE | `/chat/sessions/{id}` | chat | Bearer | Hapus percakapan |
 
 > **Auth**: `–` publik · `Bearer` butuh `Authorization: Bearer <access_token>` ·
 > **admin** butuh access token dengan role `admin`.
@@ -248,6 +252,43 @@ disertakan agar dokumen bisa **dilihat & diunduh**. **Tenant guard:** user biasa
 - **Response:** `200` (data `DocumentResponse` + `preview_url`) · `400 VALIDATION_ERROR` (id invalid)
   · `401` · `403 FORBIDDEN_ORGANIZATION` · `404 DOCUMENT_NOT_FOUND`.
 - **Logging:** WARN not-found / cross-org · ERROR tak terduga.
+
+## Module: chat  🔒 (Bearer) — conversation / RAG Q&A (Core #3)
+
+Percakapan tanya-jawab terhadap dokumen. Backend = **orchestrator**: menyimpan sesi+pesan, lalu
+meneruskan pertanyaan ke **AI client** (`internal/infra/ai`). Saat ini AI-nya **mock** — tinggal
+ganti ke HTTP client tim AI saat kontrak siap (§8c). Model: **2 tabel** `chat_sessions` +
+`chat_messages` (1 pesan = 1 row, role `user`/`assistant`).
+
+**Konsep session:** `session_id` = **UUID dari client** (id sama = percakapan sama; id baru =
+percakapan baru). Tak ada endpoint "create session" — dibuat otomatis saat `ask` pertama.
+**Sliding window 20 sesi/user** (tertua di-evict). **Scope per-user** (hanya lihat percakapan
+sendiri); `organization_code` dari token diteruskan ke AI sebagai **filter retrieval** (tenant).
+
+### POST `/chat/ask`
+- **Tujuan:** kirim pertanyaan; buat/lanjut percakapan. **Auth:** Bearer.
+- **Request:** `{ session_id (required, UUID-like), question (required) }`.
+- **Bisnis logic:**
+  1. Validasi `session_id` (UUID-like) → `400 INVALID_SESSION`.
+  2. Load session. **Milik user lain → `404 SESSION_NOT_FOUND`** (tak bisa reuse UUID orang;
+     tak bocorkan). Belum ada → buat baru (title = 80 char pertama pertanyaan; enforce sliding
+     window 20).
+  3. Simpan pesan `user` → panggil **AI** (`question, organization_code, thread_id=session_id`) →
+     simpan pesan `assistant`. **AI gagal → jawaban fallback ramah (tetap `200`)**, di-log.
+  4. `updated_at` sesi di-touch (best-effort).
+- **Response:** `200` (data `{session_id, answer}`) · `400 VALIDATION_ERROR`/`INVALID_SESSION` ·
+  `401` · `404 SESSION_NOT_FOUND`.
+- **Logging:** INFO new session / ask / answered · WARN invalid/ownership · ERROR AI/DB.
+
+### GET `/chat/sessions`
+- List sesi milik user, urut `updated_at DESC`. Response `[]{id,title,created_at,updated_at}`.
+
+### GET `/chat/sessions/{id}`
+- Detail 1 sesi + semua pesan (urut `created_at ASC`). **Hanya pemilik** (else `404`).
+- Response `{id, title, organization_code, messages:[{id,role,content,created_at}]}`.
+
+### DELETE `/chat/sessions/{id}`
+- Hapus sesi + semua pesannya (transaksi). **Hanya pemilik** (else `404`). Response `200`.
 
 ## Konvensi menulis entri baru
 
