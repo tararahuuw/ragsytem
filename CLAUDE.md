@@ -214,6 +214,21 @@ Jangan pernah `panic()` untuk alur bisnis normal — pakai `error`.
 
 ---
 
+## 4d. Rate limiting (429)
+
+Adaptasi konsep elArch (Bucket4j per-kategori) → **in-memory token bucket** (`internal/ratelimit`,
+`golang.org/x/time/rate`) + `middleware.RateLimit(limiter, category)`. Limiter dibangun sekali di
+`router.New` dari config, di-pass ke route yang butuh; middleware dipasang **per-route**.
+- **Key**: `user:<id>` bila `JWTAuth` sudah jalan (pasang RateLimit SETELAH JWTAuth), else
+  `ip:<client-ip>` (untuk endpoint publik seperti login → anti brute-force).
+- **Kategori & default** (per-menit, env `RATELIMIT_*`): `auth` 20 (login/refresh, per-IP),
+  `chat` 20 (ask, per-user, AI mahal), `upload` 300 (chunk, per-user, longgar krn chunked).
+  Kategori tanpa limit/default = unlimited. `RATELIMIT_ENABLED=false` → matikan semua.
+- Lampaui → `response.Error(c, 429, ..., "RATE_LIMITED")` + `c.Abort()` + WARN log.
+- Single-instance (janitor evict bucket idle). **Multi-instance → nanti Redis** (in-memory tak
+  shared). Menambah endpoint ke rate-limit: pass `rl` ke route module-nya, `group.POST(path,
+  middleware.RateLimit(rl, "<kategori>"), handler)`.
+
 ## 5. Cara menambah domain baru (resep)
 
 Misal menambah domain `document` (ikuti pola module `auth`):
@@ -279,6 +294,8 @@ Semua via environment variable (lihat `.env.example`). Default aman untuk local.
 | `JWT_ACCESS_TTL` / `JWT_REFRESH_TTL` | 15m / 168h | umur access & refresh token (durasi Go atau detik) |
 | `MINIO_ENDPOINT`/`MINIO_ACCESS_KEY`/`MINIO_SECRET_KEY`/`MINIO_BUCKET`/`MINIO_USE_SSL` | localhost:9000/minioadmin/minioadmin/ragsystem/false | Object storage (upload) |
 | `UPLOAD_MAX_FILE_SIZE` / `UPLOAD_PREVIEW_EXPIRY` | 524288000 (500MB) / 3h | cap ukuran file & umur presigned URL |
+| `AI_BASE_URL` / `AI_TOKEN` / `AI_TIMEOUT` | (kosong) / (kosong) / 30s | RAG service tim AI (kosong = mock) |
+| `RATELIMIT_ENABLED` / `RATELIMIT_AUTH_PER_MIN` / `RATELIMIT_CHAT_PER_MIN` / `RATELIMIT_UPLOAD_PER_MIN` | true / 20 / 20 / 300 | rate limit per-menit (§4d) |
 
 ---
 
@@ -410,6 +427,12 @@ URL/kontrak **configurable + mockable** (karena kontrak belum final). Filter ret
 
 ## 9. Changelog keputusan (append di sini)
 
+- **2026-07-18** — **Rate limiting** (§4d, adaptasi elArch/Bucket4j → Go in-memory token bucket
+  `internal/ratelimit` + `middleware.RateLimit`, via /rag-dev). Dipasang di endpoint yang butuh:
+  `auth` (login/refresh, per-IP, anti brute-force — hitung login gagal), `chat` (ask, per-user, AI
+  mahal), `upload` (chunk, per-user, 300/mnt krn chunked). Lampaui → `429 RATE_LIMITED`.
+  Configurable `RATELIMIT_*`. Unit test limiter + smoke (chat 3→429, auth 5→429) PASS. Multi-
+  instance (Redis) dicatat sebagai lanjutan.
 - **2026-07-18** — **Chat production-hardening**: `question` dibatasi ≤4000, panggilan AI
   di-wrap **timeout** (`AI_TIMEOUT`, default 30s), `CreateSession` **idempotent**
   (`OnConflict DoNothing`, race-safe), config AI (`AI_BASE_URL/AI_TOKEN/AI_TIMEOUT`) +

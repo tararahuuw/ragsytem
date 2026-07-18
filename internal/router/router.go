@@ -9,6 +9,7 @@ import (
 	"github.com/tararahuuw/ragsytem/internal/config"
 	minioinfra "github.com/tararahuuw/ragsytem/internal/infra/minio"
 	"github.com/tararahuuw/ragsytem/internal/middleware"
+	"github.com/tararahuuw/ragsytem/internal/ratelimit"
 
 	authroute "github.com/tararahuuw/ragsytem/internal/router/auth"
 	chatroute "github.com/tararahuuw/ragsytem/internal/router/chat"
@@ -40,14 +41,25 @@ func New(cfg *config.Config, db *gorm.DB, store *minioinfra.Client) *gin.Engine 
 	// swagger UI
 	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 
+	// Per-category rate limiter (in-memory token buckets; see internal/ratelimit).
+	rl := ratelimit.New(ratelimit.Config{
+		Enabled: cfg.RateLimitEnabled,
+		PerMinute: map[string]int{
+			"auth":   cfg.RateLimitAuthPerMin,
+			"chat":   cfg.RateLimitChatPerMin,
+			"upload": cfg.RateLimitUploadPerMin,
+		},
+		DefaultPerMinute: 0, // un-categorized routes are not limited
+	})
+
 	// API v1 — register modules here
 	v1 := r.Group("/api/v1")
 	healthroute.Register(v1, db)
-	authroute.Register(v1, cfg, db)
+	authroute.Register(v1, cfg, db, rl)
 	userroute.Register(v1, cfg, db)
-	uploadroute.Register(v1, cfg, db, store)
+	uploadroute.Register(v1, cfg, db, store, rl)
 	documentroute.Register(v1, cfg, db, store)
-	chatroute.Register(v1, cfg, db)
+	chatroute.Register(v1, cfg, db, rl)
 
 	return r
 }

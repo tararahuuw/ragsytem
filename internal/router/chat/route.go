@@ -8,6 +8,7 @@ import (
 	chatctrl "github.com/tararahuuw/ragsytem/internal/controller/chat"
 	"github.com/tararahuuw/ragsytem/internal/infra/ai"
 	"github.com/tararahuuw/ragsytem/internal/middleware"
+	"github.com/tararahuuw/ragsytem/internal/ratelimit"
 	chatrepo "github.com/tararahuuw/ragsytem/internal/repository/chat"
 	chatsvc "github.com/tararahuuw/ragsytem/internal/service/chat"
 )
@@ -16,7 +17,7 @@ import (
 //
 // The AI client is chosen by config (ai.NewClient): mock when AI_BASE_URL is
 // empty, real HTTP client once the AI team's contract is finalized (§8c).
-func Register(rg *gin.RouterGroup, cfg *config.Config, db *gorm.DB) {
+func Register(rg *gin.RouterGroup, cfg *config.Config, db *gorm.DB, rl *ratelimit.Limiter) {
 	ctrl := chatctrl.NewController(
 		chatsvc.NewService(
 			chatrepo.NewRepository(db),
@@ -28,7 +29,8 @@ func Register(rg *gin.RouterGroup, cfg *config.Config, db *gorm.DB) {
 	group := rg.Group("/chat")
 	group.Use(middleware.JWTAuth(cfg))
 	{
-		group.POST("/ask", ctrl.Ask)
+		// /ask hits the (paid) AI service — rate-limited per user.
+		group.POST("/ask", middleware.RateLimit(rl, "chat"), ctrl.Ask)
 		group.GET("/sessions", ctrl.ListSessions)
 		group.GET("/sessions/:id", ctrl.GetSession)
 		group.DELETE("/sessions/:id", ctrl.DeleteSession)

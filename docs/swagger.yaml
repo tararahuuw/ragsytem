@@ -320,6 +320,10 @@ paths:
           description: Unauthorized
           schema:
             $ref: '#/definitions/response.ErrorResponse'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
       summary: Login
       tags:
       - auth
@@ -353,6 +357,10 @@ paths:
             $ref: '#/definitions/response.ErrorResponse'
         "401":
           description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "429":
+          description: Too Many Requests
           schema:
             $ref: '#/definitions/response.ErrorResponse'
       summary: Refresh access token
@@ -481,6 +489,10 @@ paths:
             $ref: '#/definitions/response.ErrorResponse'
         "401":
           description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "429":
+          description: Too Many Requests
           schema:
             $ref: '#/definitions/response.ErrorResponse'
       security:

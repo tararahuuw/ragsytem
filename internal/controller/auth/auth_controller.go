@@ -111,6 +111,7 @@ func (c *Controller) BulkRegister(ctx *gin.Context) {
 //	@Success		200		{object}	response.BaseResponse{data=authdto.TokenResponse}
 //	@Failure		400		{object}	response.ErrorResponse
 //	@Failure		401		{object}	response.ErrorResponse
+//	@Failure		429		{object}	response.ErrorResponse
 //	@Router			/auth/login [post]
 func (c *Controller) Login(ctx *gin.Context) {
 	log := logger.FromContext(ctx.Request.Context())
@@ -148,6 +149,7 @@ func (c *Controller) Login(ctx *gin.Context) {
 //	@Success		200		{object}	response.BaseResponse{data=authdto.TokenResponse}
 //	@Failure		400		{object}	response.ErrorResponse
 //	@Failure		401		{object}	response.ErrorResponse
+//	@Failure		429		{object}	response.ErrorResponse
 //	@Router			/auth/refresh [post]
 func (c *Controller) Refresh(ctx *gin.Context) {
 	log := logger.FromContext(ctx.Request.Context())

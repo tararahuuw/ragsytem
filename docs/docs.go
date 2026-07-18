@@ -75,6 +75,12 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/response.ErrorResponse"
                         }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
                     }
                 }
             }
@@ -130,6 +136,12 @@ const docTemplate = `{
                     },
                     "401": {
                         "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
                         "schema": {
                             "$ref": "#/definitions/response.ErrorResponse"
                         }
@@ -340,6 +352,12 @@ const docTemplate = `{
                     },
                     "401": {
                         "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
                         "schema": {
                             "$ref": "#/definitions/response.ErrorResponse"
                         }

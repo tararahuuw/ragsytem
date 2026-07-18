@@ -43,6 +43,12 @@ type Config struct {
 	AIBaseURL string
 	AIToken   string
 	AITimeout time.Duration
+
+	// Rate limiting (requests per minute per key; 0 = unlimited for that category)
+	RateLimitEnabled      bool
+	RateLimitAuthPerMin   int
+	RateLimitChatPerMin   int
+	RateLimitUploadPerMin int
 }
 
 // Load reads configuration from the environment. It silently loads a .env file
@@ -79,6 +85,11 @@ func Load() *Config {
 		AIBaseURL: getEnv("AI_BASE_URL", ""), // kosong = mock (kontrak tim AI belum final)
 		AIToken:   getEnv("AI_TOKEN", ""),
 		AITimeout: getEnvDuration("AI_TIMEOUT", 30*time.Second),
+
+		RateLimitEnabled:      getEnv("RATELIMIT_ENABLED", "true") == "true",
+		RateLimitAuthPerMin:   int(getEnvInt64("RATELIMIT_AUTH_PER_MIN", 20)),   // anti brute-force (per IP)
+		RateLimitChatPerMin:   int(getEnvInt64("RATELIMIT_CHAT_PER_MIN", 20)),   // AI mahal (per user)
+		RateLimitUploadPerMin: int(getEnvInt64("RATELIMIT_UPLOAD_PER_MIN", 300)), // chunked = banyak req (per user)
 	}
 }
 

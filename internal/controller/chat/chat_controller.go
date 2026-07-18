@@ -35,6 +35,7 @@ func NewController(svc chatsvc.Service) *Controller {
 //	@Success		200		{object}	response.BaseResponse{data=chatdto.AskResponse}
 //	@Failure		400		{object}	response.ErrorResponse
 //	@Failure		401		{object}	response.ErrorResponse
+//	@Failure		429		{object}	response.ErrorResponse
 //	@Router			/chat/ask [post]
 func (c *Controller) Ask(ctx *gin.Context) {
 	log := logger.FromContext(ctx.Request.Context())

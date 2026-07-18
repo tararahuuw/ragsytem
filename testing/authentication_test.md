@@ -148,6 +148,11 @@ curl -s -X PATCH "$BASE_URL/users/$UID/role" -H "Authorization: Bearer $ADMIN_TO
 
 ---
 
+### TC-18 — Rate limit `/auth/login` (anti brute-force) → 429
+Jalankan app dgn limit rendah (`RATELIMIT_AUTH_PER_MIN=5 ./bin/ragsystem`). Kirim login beruntun
+(boleh password salah — rate limit dihitung sebelum cek kredensial) > limit dari **IP sama**.
+- **Ekspektasi:** N pertama `401`, sisanya `429` code `RATE_LIMITED`.
+
 ## Teardown (opsional)
 ```sql
 DELETE FROM users WHERE email LIKE 'qa%@%';

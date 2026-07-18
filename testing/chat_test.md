@@ -71,6 +71,11 @@ curl -s -o /dev/null -w "%{http_code}\n" "$BASE_URL/chat/sessions/$SID" -H "Auth
 ```
 - **Ekspektasi:** `200` lalu `404`.
 
+### TC-08 — Rate limit `/chat/ask` → 429
+Jalankan app dengan limit rendah (mis. `RATELIMIT_CHAT_PER_MIN=3 ./bin/ragsystem`), lalu kirim
+`ask` beruntun > limit.
+- **Ekspektasi:** N pertama `200`, sisanya `429` code `RATE_LIMITED` (per-user). Reset < 1 menit.
+
 ---
 
 ## Catatan

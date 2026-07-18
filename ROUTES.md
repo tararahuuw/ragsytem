@@ -37,6 +37,21 @@ Base URL: `http://localhost:8080/api/v1` · Envelope: `internal/response` (`Base
 > **Auth**: `–` publik · `Bearer` butuh `Authorization: Bearer <access_token>` ·
 > **admin** butuh access token dengan role `admin`.
 
+## Rate limiting (429)
+
+Adaptasi konsep elArch (Bucket4j) → **in-memory token bucket** per-kategori (`internal/ratelimit`
++ `middleware.RateLimit`). **Key** = `user:<id>` bila terautentikasi (chain setelah `JWTAuth`),
+selain itu `ip:<client-ip>` (cocok untuk endpoint publik/brute-force). Lampaui limit → **`429`**
+`{code: RATE_LIMITED}`. Limit per-menit **configurable via env** (`RATELIMIT_*`); default:
+
+| Kategori | Endpoint | Default limit | Key | Alasan |
+|---|---|---|---|---|
+| `auth` | `POST /auth/login`, `/auth/refresh` | 20/menit | **per-IP** | anti brute-force (hitung login gagal juga) |
+| `chat` | `POST /chat/ask` | 20/menit | per-user | endpoint AI mahal |
+| `upload` | `POST /uploads/chunk` | 300/menit | per-user | chunked = banyak request/file (perlu longgar) |
+
+Single-instance (in-memory + janitor evict idle). Multi-instance → nanti pakai Redis (dicatat).
+
 ## RBAC (role admin & user)
 
 - **Role** disimpan di `users.role` (default `user`) dan di-embed sebagai claim `role` di JWT.
