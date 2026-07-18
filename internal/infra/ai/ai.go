@@ -7,7 +7,10 @@ package ai
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"time"
+
+	"github.com/tararahuuw/ragsytem/internal/config"
 )
 
 // AskRequest is the input to the AI RAG service.
@@ -41,6 +44,19 @@ type mockClient struct{}
 // NewMockClient returns an AI Client that fakes RAG answers (development only,
 // until the AI team's API is wired).
 func NewMockClient() Client { return &mockClient{} }
+
+// NewClient picks the AI client based on config: the real HTTP client when
+// AI_BASE_URL is set, otherwise the mock. This is the single swap point once the
+// AI team's contract is finalized (see CLAUDE.md §8c).
+func NewClient(cfg *config.Config) Client {
+	if cfg.AIBaseURL == "" {
+		slog.Warn("ai: AI_BASE_URL not set — using MOCK AI client (answers are fake)")
+		return NewMockClient()
+	}
+	// TODO(ai-team): return newHTTPClient(cfg) once the endpoint/contract is known.
+	slog.Warn("ai: real AI client not implemented yet — falling back to MOCK", "base_url", cfg.AIBaseURL)
+	return NewMockClient()
+}
 
 func (m *mockClient) Ask(_ context.Context, req AskRequest) (AskResponse, error) {
 	answer := fmt.Sprintf(

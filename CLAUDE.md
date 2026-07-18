@@ -317,10 +317,12 @@ make run              # server :8080
 - [x] **Document (baca hasil upload)**: `GET /documents` (list, user: org sendiri · admin: semua) +
       `GET /documents/{id}` (detail + presigned download), tenant-scoped. Sumber `upload_logs`.
 - [ ] **Core #2 — RAG consume API tim AI**: ingest dokumen hasil upload + endpoint query.
-- [x] **Core #3 — Discussion/Q&A (skeleton)**: module `chat` (ask/sessions/detail/delete),
-      2 tabel (`chat_sessions`/`chat_messages`), session_id client-UUID, sliding-window 20,
-      per-user scope + orgCode filter. **AI client = mock** (`internal/infra/ai`), tinggal colok
-      endpoint tim AI (§8c) saat kontrak siap.
+- [x] **Core #3 — Discussion/Q&A (production-ready skeleton)**: module `chat`
+      (ask/sessions/detail/delete), 2 tabel (`chat_sessions`/`chat_messages`), session_id
+      client-UUID, sliding-window 20, per-user scope + orgCode filter, ownership guard (404),
+      **question ≤4000**, **AI call ber-timeout** (`AI_TIMEOUT`), CreateSession **idempotent**
+      (race-safe), unit test service. **AI client = mock via `ai.NewClient(cfg)`** — set
+      `AI_BASE_URL` untuk swap ke client asli (§8c) saat kontrak tim AI siap.
 - [ ] Auth lanjutan: forgot/reset password, revoke refresh token.
 
 > Referensi desain sistem serupa yang sudah jadi: lihat `../elarch/CLAUDE.md` (pola upload
@@ -408,6 +410,13 @@ URL/kontrak **configurable + mockable** (karena kontrak belum final). Filter ret
 
 ## 9. Changelog keputusan (append di sini)
 
+- **2026-07-18** — **Chat production-hardening**: `question` dibatasi ≤4000, panggilan AI
+  di-wrap **timeout** (`AI_TIMEOUT`, default 30s), `CreateSession` **idempotent**
+  (`OnConflict DoNothing`, race-safe), config AI (`AI_BASE_URL/AI_TOKEN/AI_TIMEOUT`) +
+  factory `ai.NewClient(cfg)` (mock kalau URL kosong, warn di startup), **unit test** service
+  (sliding-window/ownership/ask). Banding elArch: model kita 2-tabel + ownership guard + delete +
+  error envelope → setara/lebih baik. **Rekomendasi lanjutan (belum): rate-limit /chat/ask
+  (endpoint AI mahal), paginasi pesan, persist citations/sources.**
 - **2026-07-18** — **Core #3 — module `chat` (conversation/RAG Q&A, via /rag-dev)**. 2 tabel
   `chat_sessions`+`chat_messages` (TableName eksplisit), `session_id` = UUID client (id sama =
   lanjut percakapan), sliding-window 20 sesi/user, **scope per-user** + `organization_code` →

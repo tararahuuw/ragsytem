@@ -5,6 +5,7 @@ import (
 	"errors"
 	"regexp"
 	"strings"
+	"time"
 
 	chatdto "github.com/tararahuuw/ragsytem/internal/dto/chat"
 	"github.com/tararahuuw/ragsytem/internal/infra/ai"
@@ -38,13 +39,18 @@ type Service interface {
 }
 
 type service struct {
-	repo chatrepo.Repository
-	ai   ai.Client
+	repo      chatrepo.Repository
+	ai        ai.Client
+	aiTimeout time.Duration
 }
 
-// NewService wires a chat Service over the repository and AI client.
-func NewService(repo chatrepo.Repository, aiClient ai.Client) Service {
-	return &service{repo: repo, ai: aiClient}
+// NewService wires a chat Service over the repository and AI client. aiTimeout
+// bounds every call to the AI service (0 = a safe default).
+func NewService(repo chatrepo.Repository, aiClient ai.Client, aiTimeout time.Duration) Service {
+	if aiTimeout <= 0 {
+		aiTimeout = 30 * time.Second
+	}
+	return &service{repo: repo, ai: aiClient, aiTimeout: aiTimeout}
 }
 
 func (s *service) Ask(ctx context.Context, userID uint, orgCode string, req chatdto.AskRequest) (chatdto.AskResponse, error) {
@@ -93,12 +99,15 @@ func (s *service) Ask(ctx context.Context, userID uint, orgCode string, req chat
 	// is degraded to a friendly fallback answer (still 200), and logged.
 	log.Info("chat: ask", "session", sess.ID, "organization_code", sess.OrganizationCode)
 	answer := fallbackAnswer
-	if aiResp, err := s.ai.Ask(ctx, ai.AskRequest{
+	aiCtx, cancel := context.WithTimeout(ctx, s.aiTimeout)
+	aiResp, aiErr := s.ai.Ask(aiCtx, ai.AskRequest{
 		Question:         req.Question,
 		OrganizationCode: sess.OrganizationCode,
 		ThreadID:         sess.ID,
-	}); err != nil {
-		log.Error("chat: AI call failed", "session", sess.ID, "error", err)
+	})
+	cancel()
+	if aiErr != nil {
+		log.Error("chat: AI call failed", "session", sess.ID, "error", aiErr)
 	} else {
 		answer = aiResp.Answer
 	}

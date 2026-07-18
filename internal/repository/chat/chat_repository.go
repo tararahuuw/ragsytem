@@ -5,6 +5,7 @@ import (
 	"errors"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	chatmodel "github.com/tararahuuw/ragsytem/internal/model/chat"
 )
@@ -64,8 +65,10 @@ func (r *gormRepository) OldestSessionID(ctx context.Context, userID uint) (stri
 	return s.ID, nil
 }
 
+// CreateSession is idempotent on the primary key: a concurrent request that
+// races on the same (client-generated) session id won't fail with a PK conflict.
 func (r *gormRepository) CreateSession(ctx context.Context, s *chatmodel.Session) error {
-	return r.db.WithContext(ctx).Create(s).Error
+	return r.db.WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).Create(s).Error
 }
 
 func (r *gormRepository) TouchSession(ctx context.Context, id string) error {

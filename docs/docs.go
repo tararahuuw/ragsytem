@@ -1241,6 +1241,7 @@ const docTemplate = `{
             "properties": {
                 "question": {
                     "type": "string",
+                    "maxLength": 4000,
                     "example": "Ringkas dokumen laporan tahunan"
                 },
                 "session_id": {

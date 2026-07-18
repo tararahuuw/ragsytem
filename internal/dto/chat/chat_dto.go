@@ -7,7 +7,7 @@ import "time"
 // UUID (same id = same conversation; new id = new conversation).
 type AskRequest struct {
 	SessionID string `json:"session_id" binding:"required" example:"3f2504e0-4f89-41d3-9a0c-0305e82c3301"`
-	Question  string `json:"question" binding:"required" example:"Ringkas dokumen laporan tahunan"`
+	Question  string `json:"question" binding:"required,max=4000" example:"Ringkas dokumen laporan tahunan"`
 }
 
 // AskResponse is returned from POST /chat/ask.

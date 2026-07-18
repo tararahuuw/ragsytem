@@ -14,13 +14,14 @@ import (
 
 // Register wires the chat module and mounts its routes (all require a JWT).
 //
-// The AI client is a mock for now (see internal/infra/ai); swap NewMockClient()
-// for the real HTTP client once the AI team's contract is finalized.
+// The AI client is chosen by config (ai.NewClient): mock when AI_BASE_URL is
+// empty, real HTTP client once the AI team's contract is finalized (§8c).
 func Register(rg *gin.RouterGroup, cfg *config.Config, db *gorm.DB) {
 	ctrl := chatctrl.NewController(
 		chatsvc.NewService(
 			chatrepo.NewRepository(db),
-			ai.NewMockClient(),
+			ai.NewClient(cfg),
+			cfg.AITimeout,
 		),
 	)
 

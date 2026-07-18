@@ -38,6 +38,11 @@ type Config struct {
 	// Upload
 	UploadMaxFileSize   int64         // bytes; hard cap per file
 	UploadPreviewExpiry time.Duration // presigned URL lifetime
+
+	// AI / RAG service (PLN AI team). Empty base URL = use mock client.
+	AIBaseURL string
+	AIToken   string
+	AITimeout time.Duration
 }
 
 // Load reads configuration from the environment. It silently loads a .env file
@@ -70,6 +75,10 @@ func Load() *Config {
 
 		UploadMaxFileSize:   getEnvInt64("UPLOAD_MAX_FILE_SIZE", 500*1024*1024), // 500 MB (ikut elArch)
 		UploadPreviewExpiry: getEnvDuration("UPLOAD_PREVIEW_EXPIRY", 3*time.Hour),
+
+		AIBaseURL: getEnv("AI_BASE_URL", ""), // kosong = mock (kontrak tim AI belum final)
+		AIToken:   getEnv("AI_TOKEN", ""),
+		AITimeout: getEnvDuration("AI_TIMEOUT", 30*time.Second),
 	}
 }
 
