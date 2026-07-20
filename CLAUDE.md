@@ -229,6 +229,33 @@ Adaptasi konsep elArch (Bucket4j per-kategori) → **in-memory token bucket** (`
   shared). Menambah endpoint ke rate-limit: pass `rl` ke route module-nya, `group.POST(path,
   middleware.RateLimit(rl, "<kategori>"), handler)`.
 
+## 4e. Error monitoring — Sentry 🔑
+
+**Semua error server tercapture ke Sentry tanpa kode tambahan di handler.** Mekanismenya menumpang
+disiplin logging §4b: `internal/logger/sentry.go` membungkus slog handler default — tiap record
+dengan level **≥ `SENTRY_LEVEL`** (default `error`) di-forward jadi event Sentry. Karena tiap
+cabang error di codebase **wajib** `log.Error(...)`, otomatis semua error tak terduga jadi event.
+
+- **Setup:** `internal/infra/sentry.Init(cfg)` di `main.go` (sebelum dependency lain, agar error
+  startup pun tertangkap) → `logger.EnableSentry(level)` membungkus handler → `defer flush()`.
+- **Mockable (pola sama AI/email):** `SENTRY_DSN` kosong → `Init` warn "sentry disabled" + no-op;
+  error tetap di-log lokal. Tak ada dependency wajib di dev.
+- **Capture policy:** `ERROR`/5xx/panic → Sentry ✅ (sebagai **exception**: attr `error` atau
+  `panic` dipakai; else `CaptureMessage`). `4xx` klien di-log `WARN` → **tidak** dikirim (anti
+  noise) kecuali `SENTRY_LEVEL=warn`. Panic: `middleware.Recovery` log `ERROR` → ter-forward.
+- **Atribusi endpoint:** `middleware.RequestID` menyimpan `http_method` + route template
+  (`c.FullPath()`, mis. `/documents/:id`) ke context → `logger.FromContext` menambahkannya ke tiap
+  log → handler menjadikannya **transaction** Sentry (`"GET /documents/:id"`, tampil sebagai
+  culprit/judul issue) + tag `http.method`/`http.route` + fingerprint per-endpoint. **Jadi tahu
+  endpoint mana yang error.** Baris ringkasan `http_request` (AccessLog) **tidak** di-forward
+  (duplikat tanpa pesan error) — error asli sudah tertangkap terpisah dengan konteks endpoint.
+- **Enrichment lain:** tag `request_id` + context `log` (semua atribut). **Jangan** log data
+  sensitif (§4b) → otomatis tak bocor ke Sentry juga.
+- **Concurrency:** handler meng-`Clone()` hub global per-record (aman dari race scope).
+- **Verifikasi (non-prod):** module `debug` (`GET /debug/{error,panic,message}`) sengaja memicu
+  error untuk membuktikan pipeline; di-mount hanya bila `APP_ENV != production`. Playbook:
+  `testing/full_failure_test.md`.
+
 ## 5. Cara menambah domain baru (resep)
 
 Misal menambah domain `document` (ikuti pola module `auth`):
@@ -298,6 +325,7 @@ Semua via environment variable (lihat `.env.example`). Default aman untuk local.
 | `RATELIMIT_ENABLED` / `RATELIMIT_AUTH_PER_MIN` / `RATELIMIT_CHAT_PER_MIN` / `RATELIMIT_UPLOAD_PER_MIN` | true / 20 / 20 / 300 | rate limit per-menit (§4d) |
 | `SMTP_HOST` / `SMTP_PORT` / `SMTP_USERNAME` / `SMTP_PASSWORD` / `SMTP_FROM` | (kosong) / 587 / (kosong) / (kosong) / no-reply@ragsystem.local | Email (forgot-password). **`SMTP_HOST` kosong = mock** (token di-log, tak dikirim) — §8d |
 | `APP_BASE_URL` / `PASSWORD_RESET_TTL` | http://localhost:8080 / 30m | base URL link reset + umur token reset |
+| `SENTRY_DSN` / `SENTRY_ENVIRONMENT` / `SENTRY_LEVEL` / `SENTRY_TRACES_SAMPLE_RATE` | (kosong) / (kosong=ikut APP_ENV) / error / 0.0 | Sentry error monitoring. **DSN kosong = mati** (no-op). `SENTRY_LEVEL` = ambang forward (`error` default / `warn`). §4e |
 
 ---
 
@@ -349,6 +377,9 @@ make run              # server :8080
 - [x] **Auth security (Tier-1b)**: change-password (authenticated), logout/revoke, forgot +
       reset password via email. **Revocation via `token_version`** (claim `ver`) — logout/change/
       reset bump versi → refresh token lama invalid. Email **adapter mockable** (§8d). Smoke 18/18.
+- [x] **Error monitoring — Sentry** (§4e): semua error server (5xx/panic/ERROR) auto-capture via
+      slog handler, `SENTRY_LEVEL` configurable, DSN kosong=mockable. Debug endpoints (non-prod) +
+      playbook `full_failure_test.md`. Pipeline terverifikasi (event terkirim ke ingest).
 
 > Referensi desain sistem serupa yang sudah jadi: lihat `../elarch/CLAUDE.md` (pola upload
 > chunked, proxy LLM/OCR, access-control retrieval, chat history).
@@ -463,6 +494,26 @@ seperti AI client (`ai.NewClient`) — swap real/mock tanpa ubah caller.
 
 ## 9. Changelog keputusan (append di sini)
 
+- **2026-07-20** — **Error monitoring Sentry** (§4e, via /rag-dev). **Semua error tercapture ke
+  Sentry lewat slog handler** (`internal/logger/sentry.go`): record level ≥ `SENTRY_LEVEL`
+  (default `error`) di-forward jadi event — menumpang disiplin §4b (tiap error branch `log.Error`),
+  jadi **tak perlu panggil Sentry manual di handler**. Keputusan: **(1)** capture level
+  **configurable** (`SENTRY_LEVEL` error/warn) — default ERROR-only supaya 4xx klien (WARN) tak
+  membanjiri Sentry; **(2)** panic (via `Recovery`) & error jadi **exception** (attr `error`/`panic`),
+  else `CaptureMessage`, dengan tag `request_id` + context `log`. Init `internal/infra/sentry`
+  (**mockable**: DSN kosong = no-op, pola sama AI/email), `main.go` init sebelum dependency +
+  `defer flush()` + `fatal()` helper (os.Exit skip defer). **Module `debug`** (`GET /debug/{error,
+  panic,message}`) pemicu error **hanya non-production** (di prod 404) untuk verifikasi pipeline.
+  Config `SENTRY_*`; DSN asli di `.env` (gitignored), `.env.example` kosong. Dep baru
+  `github.com/getsentry/sentry-go`. Unit test level-mapping; **full-failure playbook**
+  `testing/full_failure_test.md` (13/13 PASS) + verifikasi delivery ke ingest Sentry.
+  **Atribusi endpoint** (follow-up hari sama): `RequestID` middleware simpan `http_method` +
+  route template (`c.FullPath()`) ke context → tiap event dapat **transaction** `"GET
+  /documents/:id"` + tag `http.method`/`http.route` + fingerprint per-endpoint (sebelumnya culprit
+  = fungsi `internal/logger`, tak jelas endpoint-nya). Baris `http_request` AccessLog **di-skip**
+  dari Sentry (duplikat "No error message"). Terverifikasi via custom-transport probe
+  (transaction terisi, event tunggal). **Lanjutan (belum): user/tenant context di event
+  (sentrygin), performance tracing (sample>0), scrubbing field sensitif baru.**
 - **2026-07-20** — **Auth security Tier-1b** (change-password · logout/revoke · forgot/reset
   password via email, via /rag-dev). §8d. **Revocation `token_version`** (claim `ver`): kolom
   `users.token_version` + backfill; logout/change/reset bump versi → `/auth/refresh` tolak token

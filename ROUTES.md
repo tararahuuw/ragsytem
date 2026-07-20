@@ -42,6 +42,9 @@ Base URL: `http://localhost:8080/api/v1` · Envelope: `internal/response` (`Base
 | GET | `/chat/sessions` | chat | Bearer | List percakapan milik user |
 | GET | `/chat/sessions/{id}` | chat | Bearer | Detail percakapan + pesan |
 | DELETE | `/chat/sessions/{id}` | chat | Bearer | Hapus percakapan |
+| GET | `/debug/error` | debug | – | **non-prod** Paksa 500 (uji capture Sentry) |
+| GET | `/debug/panic` | debug | – | **non-prod** Paksa panic (uji Recovery + Sentry) |
+| GET | `/debug/message` | debug | – | **non-prod** Emit WARN (uji ambang `SENTRY_LEVEL`) |
 
 > **Auth**: `–` publik · `Bearer` butuh `Authorization: Bearer <access_token>` ·
 > **admin** butuh access token dengan role `admin`.
@@ -401,6 +404,35 @@ users saat migrate. Read (list/get) = semua user login; write = **admin**.
 `POST /auth/register` & `/auth/register/bulk` kini **memvalidasi** `organization_code`
 (`ExistsActive`): org tak dikenal/nonaktif → register `400 INVALID_ORGANIZATION`; bulk → item
 `failed` code `INVALID_ORGANIZATION` (partial success). Org code disimpan ter-trim.
+
+## Observability — Sentry (error monitoring)
+
+Semua error server tercapture ke **Sentry** lewat **slog handler** (`internal/logger/sentry.go`):
+tiap log level **≥ `SENTRY_LEVEL`** (default `error`) di-forward sebagai event. Karena §4b
+mewajibkan tiap cabang error di-log, otomatis semua error tak terduga (5xx, panic, dependency
+down) jadi event Sentry — **tanpa perlu memanggil Sentry manual di tiap handler**.
+
+- **Yang masuk Sentry (default):** `ERROR` → `500 INTERNAL_ERROR`, panic (via
+  `middleware.Recovery`, di-log `ERROR` lalu di-forward sebagai exception), error dependency
+  (DB/MinIO/AI). Event dibawa dengan tag `request_id` + context `log` (semua atribut log).
+- **Yang TIDAK masuk (default):** `4xx` klien (validasi/authz/404/409/429) di-log **`WARN`** →
+  by design tak dikirim (anti-noise). Naikkan dengan `SENTRY_LEVEL=warn` bila ingin ikut menangkap.
+- **Mockable:** `SENTRY_DSN` kosong → Sentry mati (no-op), error tetap di-log lokal. Pola sama
+  seperti AI/email adapter. Config: `SENTRY_DSN`, `SENTRY_ENVIRONMENT` (kosong=ikut `APP_ENV`),
+  `SENTRY_LEVEL`, `SENTRY_TRACES_SAMPLE_RATE`. Flush di-`defer` saat shutdown (main.go).
+- **Atribusi endpoint:** `middleware.RequestID` menaruh `http_method` + route (`c.FullPath()`,
+  mis. `/documents/:id`) ke context → tiap event dapat **transaction** `"GET /documents/:id"`
+  (tampil sebagai judul/culprit issue) + tag `http.method`/`http.route` + fingerprint per-endpoint,
+  jadi ketahuan endpoint mana yang error. Baris `http_request` (AccessLog) tak di-forward (duplikat
+  tanpa pesan) — error asli sudah tertangkap terpisah.
+
+### Debug endpoints (verifikasi pipeline — **hanya non-production**)
+Di-mount hanya bila `APP_ENV != production` (di prod → `404`). Untuk membuktikan error API sampai
+ke Sentry (dipakai `testing/full_failure_test.md`):
+- `GET /debug/error` — log `ERROR` + balas `500 DEBUG_FORCED_ERROR` → Sentry **exception**.
+- `GET /debug/panic` — `panic()` → `Recovery` → `500 INTERNAL_ERROR` (stack tak bocor) → Sentry
+  **exception**.
+- `GET /debug/message` — log `WARN` + `200` → ke Sentry **hanya** bila `SENTRY_LEVEL=warn`.
 
 ## Konvensi menulis entri baru
 

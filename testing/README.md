@@ -84,5 +84,9 @@ Ringkasan: 1 PASS, 1 FAIL
 | `upload_test.md` | Upload chunked (PDF) → MinIO → compose → presigned + Document (list/get, tenant-scoped) | READY |
 | `chat_test.md` | Conversation / RAG Q&A (ask, sessions list/detail/delete), AI mock, per-user scope | READY |
 | `organization_test.md` | Organization CRUD + guard organization_code (register/bulk validasi org) | READY |
+| `full_failure_test.md` | **Semua API kondisi error** (400/401/403/404/409/429/500) + verifikasi capture ke **Sentry** (debug endpoints, kebijakan level) | READY |
 
 Tambahkan baris baru di tabel ini setiap kali membuat playbook baru.
+
+> **`full_failure_test.md`** khusus jalur GAGAL lintas-module + observability Sentry. Perintah:
+> `test module full_failure` (atau `test full failure`).

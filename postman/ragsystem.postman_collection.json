@@ -437,6 +437,39 @@
           }
         }
       ]
+    },
+    {
+      "name": "debug",
+      "description": "Endpoint verifikasi Sentry — HANYA aktif saat APP_ENV != production (di prod → 404). Setelah hit, cek Sentry → Issues.",
+      "item": [
+        {
+          "name": "Force Error (500 -> Sentry)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{base_url}}/debug/error", "host": ["{{base_url}}"], "path": ["debug", "error"] },
+            "description": "Paksa 500 (DEBUG_FORCED_ERROR). Log ERROR → tercapture di Sentry sebagai exception."
+          }
+        },
+        {
+          "name": "Force Panic (500 -> Sentry)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{base_url}}/debug/panic", "host": ["{{base_url}}"], "path": ["debug", "panic"] },
+            "description": "Paksa panic → middleware.Recovery → 500 INTERNAL_ERROR (stack tak bocor) → Sentry exception."
+          }
+        },
+        {
+          "name": "Force Warn Message (200)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{base_url}}/debug/message", "host": ["{{base_url}}"], "path": ["debug", "message"] },
+            "description": "Emit log WARN + 200. Masuk Sentry HANYA bila SENTRY_LEVEL=warn (default error = tidak)."
+          }
+        }
+      ]
     }
   ],
   "variable": [

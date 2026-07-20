@@ -13,6 +13,7 @@ import (
 
 	authroute "github.com/tararahuuw/ragsytem/internal/router/auth"
 	chatroute "github.com/tararahuuw/ragsytem/internal/router/chat"
+	debugroute "github.com/tararahuuw/ragsytem/internal/router/debug"
 	documentroute "github.com/tararahuuw/ragsytem/internal/router/document"
 	healthroute "github.com/tararahuuw/ragsytem/internal/router/health"
 	orgroute "github.com/tararahuuw/ragsytem/internal/router/organization"
@@ -62,6 +63,11 @@ func New(cfg *config.Config, db *gorm.DB, store *minioinfra.Client) *gin.Engine 
 	uploadroute.Register(v1, cfg, db, store, rl)
 	documentroute.Register(v1, cfg, db, store)
 	chatroute.Register(v1, cfg, db, rl)
+
+	// Debug/Sentry-verification routes — NEVER in production.
+	if !cfg.IsProduction() {
+		debugroute.Register(v1)
+	}
 
 	return r
 }

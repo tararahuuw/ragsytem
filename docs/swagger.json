@@ -685,6 +685,66 @@
                 }
             }
         },
+        "/debug/error": {
+            "get": {
+                "description": "Non-production only. Logs an ERROR (captured by Sentry as an exception) and returns 500. Use to verify errors reach Sentry.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "debug"
+                ],
+                "summary": "[debug] Force a 500 error (Sentry test)",
+                "responses": {
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/debug/message": {
+            "get": {
+                "description": "Non-production only. Logs a WARN message — reaches Sentry only if SENTRY_LEVEL=warn. Returns 200. Use to verify the level threshold.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "debug"
+                ],
+                "summary": "[debug] Emit a WARN message (Sentry test)",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/response.BaseResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/debug/panic": {
+            "get": {
+                "description": "Non-production only. Panics so middleware.Recovery catches it, logs it, and Sentry captures it. Returns a standardized 500.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "debug"
+                ],
+                "summary": "[debug] Force a panic (Sentry test)",
+                "responses": {
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/documents": {
             "get": {
                 "security": [

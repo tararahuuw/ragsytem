@@ -60,6 +60,12 @@ type Config struct {
 	// App base URL (used to build password-reset links) + reset token TTL.
 	AppBaseURL       string
 	PasswordResetTTL time.Duration
+
+	// Sentry error monitoring (empty DSN = disabled / no-op).
+	SentryDSN              string
+	SentryEnvironment      string  // defaults to AppEnv when empty
+	SentryLevel            string  // minimum slog level forwarded: "error" (default) | "warn"
+	SentryTracesSampleRate float64 // 0 = errors only (no performance tracing)
 }
 
 // Load reads configuration from the environment. It silently loads a .env file
@@ -110,6 +116,11 @@ func Load() *Config {
 
 		AppBaseURL:       getEnv("APP_BASE_URL", "http://localhost:8080"),
 		PasswordResetTTL: getEnvDuration("PASSWORD_RESET_TTL", 30*time.Minute),
+
+		SentryDSN:              getEnv("SENTRY_DSN", ""), // kosong = Sentry mati (no-op)
+		SentryEnvironment:      getEnv("SENTRY_ENVIRONMENT", ""),
+		SentryLevel:            getEnv("SENTRY_LEVEL", "error"),
+		SentryTracesSampleRate: getEnvFloat("SENTRY_TRACES_SAMPLE_RATE", 0.0),
 	}
 }
 
@@ -143,6 +154,16 @@ func getEnvInt64(key string, fallback int64) int64 {
 	if v, ok := os.LookupEnv(key); ok && v != "" {
 		if n, err := strconv.ParseInt(v, 10, 64); err == nil {
 			return n
+		}
+	}
+	return fallback
+}
+
+// getEnvFloat reads a float env var, falling back on empty/invalid input.
+func getEnvFloat(key string, fallback float64) float64 {
+	if v, ok := os.LookupEnv(key); ok && v != "" {
+		if f, err := strconv.ParseFloat(v, 64); err == nil {
+			return f
 		}
 	}
 	return fallback

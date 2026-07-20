@@ -21,7 +21,17 @@ func RequestID() gin.HandlerFunc {
 		}
 		c.Set("request_id", id)
 		c.Header(RequestIDKey, id)
-		c.Request = c.Request.WithContext(logger.WithRequestID(c.Request.Context(), id))
+
+		ctx := logger.WithRequestID(c.Request.Context(), id)
+		// Route template (e.g. "/documents/:id") groups per-endpoint in Sentry;
+		// fall back to the raw path for unmatched routes (404).
+		route := c.FullPath()
+		if route == "" {
+			route = c.Request.URL.Path
+		}
+		ctx = logger.WithHTTP(ctx, c.Request.Method, route)
+		c.Request = c.Request.WithContext(ctx)
+
 		c.Next()
 	}
 }

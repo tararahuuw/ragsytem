@@ -7,6 +7,7 @@ import (
 	"github.com/tararahuuw/ragsytem/internal/config"
 	"github.com/tararahuuw/ragsytem/internal/database"
 	minioinfra "github.com/tararahuuw/ragsytem/internal/infra/minio"
+	sentryinfra "github.com/tararahuuw/ragsytem/internal/infra/sentry"
 	"github.com/tararahuuw/ragsytem/internal/logger"
 	"github.com/tararahuuw/ragsytem/internal/router"
 
@@ -32,20 +33,32 @@ func main() {
 	cfg := config.Load()
 	logger.Init(cfg.AppEnv)
 
-	db, err := database.Connect(cfg)
-	if err != nil {
-		slog.Error("failed to connect to database", "error", err)
+	// Start Sentry, then wrap the logger so every error log is also shipped there.
+	// flush drains buffered events on exit; os.Exit skips defers, so fatal() below
+	// flushes explicitly before exiting.
+	flush := sentryinfra.Init(cfg)
+	defer flush()
+	if cfg.SentryDSN != "" {
+		logger.EnableSentry(logger.ParseLevel(cfg.SentryLevel))
+	}
+
+	fatal := func(msg string, err error) {
+		slog.Error(msg, "error", err)
+		flush()
 		os.Exit(1)
 	}
+
+	db, err := database.Connect(cfg)
+	if err != nil {
+		fatal("failed to connect to database", err)
+	}
 	if err := database.Migrate(db); err != nil {
-		slog.Error("failed to run migrations", "error", err)
-		os.Exit(1)
+		fatal("failed to run migrations", err)
 	}
 
 	store, err := minioinfra.New(cfg)
 	if err != nil {
-		slog.Error("failed to connect to object storage (minio)", "error", err)
-		os.Exit(1)
+		fatal("failed to connect to object storage (minio)", err)
 	}
 
 	r := router.New(cfg, db, store)
@@ -57,7 +70,6 @@ func main() {
 		"swagger", "/swagger/index.html",
 	)
 	if err := r.Run(cfg.ServerAddr()); err != nil {
-		slog.Error("server error", "error", err)
-		os.Exit(1)
+		fatal("server error", err)
 	}
 }
