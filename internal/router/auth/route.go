@@ -6,6 +6,7 @@ import (
 
 	"github.com/tararahuuw/ragsytem/internal/config"
 	authctrl "github.com/tararahuuw/ragsytem/internal/controller/auth"
+	"github.com/tararahuuw/ragsytem/internal/infra/email"
 	"github.com/tararahuuw/ragsytem/internal/middleware"
 	"github.com/tararahuuw/ragsytem/internal/ratelimit"
 	"github.com/tararahuuw/ragsytem/internal/rbac"
@@ -20,10 +21,13 @@ func Register(rg *gin.RouterGroup, cfg *config.Config, db *gorm.DB, rl *ratelimi
 		authsvc.NewService(
 			userrepo.NewRepository(db),
 			orgrepo.NewRepository(db),
+			email.NewSender(cfg),
 			authsvc.Config{
-				Secret:     cfg.JWTSecret,
-				AccessTTL:  cfg.JWTAccessTTL,
-				RefreshTTL: cfg.JWTRefreshTTL,
+				Secret:           cfg.JWTSecret,
+				AccessTTL:        cfg.JWTAccessTTL,
+				RefreshTTL:       cfg.JWTRefreshTTL,
+				AppBaseURL:       cfg.AppBaseURL,
+				PasswordResetTTL: cfg.PasswordResetTTL,
 			},
 		),
 	)
@@ -33,6 +37,12 @@ func Register(rg *gin.RouterGroup, cfg *config.Config, db *gorm.DB, rl *ratelimi
 		// Public — rate-limited per IP (anti brute-force).
 		group.POST("/login", middleware.RateLimit(rl, "auth"), ctrl.Login)
 		group.POST("/refresh", middleware.RateLimit(rl, "auth"), ctrl.Refresh)
+		// Password reset (public) — rate-limited per IP (anti abuse/enumeration).
+		group.POST("/forgot-password", middleware.RateLimit(rl, "auth"), ctrl.ForgotPassword)
+		group.POST("/reset-password", middleware.RateLimit(rl, "auth"), ctrl.ResetPassword)
+		// Authenticated self-service.
+		group.POST("/change-password", middleware.JWTAuth(cfg), ctrl.ChangePassword)
+		group.POST("/logout", middleware.JWTAuth(cfg), ctrl.Logout)
 		// Admin-only: creating users requires a valid admin access token.
 		group.POST("/register",
 			middleware.JWTAuth(cfg),

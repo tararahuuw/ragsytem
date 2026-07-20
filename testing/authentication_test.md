@@ -153,10 +153,43 @@ Jalankan app dgn limit rendah (`RATELIMIT_AUTH_PER_MIN=5 ./bin/ragsystem`). Kiri
 (boleh password salah — rate limit dihitung sebelum cek kredensial) > limit dari **IP sama**.
 - **Ekspektasi:** N pertama `401`, sisanya `429` code `RATE_LIMITED`.
 
+### TC-19 — Change password + revocation (token_version)
+Login `$USER_EMAIL`/`secret123` → capture `access_token` **&** `refresh_token`.
+1. `POST /auth/change-password` (Bearer) body `{"old_password":"WRONGpw","new_password":"newSecret456"}`
+   → **`400 INVALID_OLD_PASSWORD`**.
+2. Ulang dengan `old_password:"secret123"` → **`200`**.
+3. `POST /auth/refresh` pakai **refresh_token lama** → **`401`** (token_version bump → revoked).
+4. Login `secret123` → **`401`**; login `newSecret456` → **`200`**.
+- **Bukti:** ganti password mencabut semua sesi (refresh) lama.
+
+### TC-20 — Logout (revoke refresh) → 200
+Login (dapat access+refresh baru) → `POST /auth/logout` (Bearer) → **`200`**.
+- `POST /auth/refresh` pakai refresh token tsb → **`401`** (revoked).
+- Access token tetap sah sampai TTL habis (by design; tak ada blacklist per-request).
+
+### TC-21 — Forgot password (anti-enumeration) → selalu 200
+1. `POST /auth/forgot-password` body `{"email":"nobody_xyz@pln.co.id"}` (email tak ada) → **`200`**.
+2. `POST /auth/forgot-password` body `{"email":"$USER_EMAIL"}` → **`200`**.
+   - Tanpa SMTP (`SMTP_HOST` kosong): token muncul di **log server** —
+     `grep -o 'reset-password?token=[a-f0-9]*' <log> | tail -1 | cut -d= -f2` → `RESET_TOKEN`.
+- **Bukti:** response identik untuk email ada/tidak ada (tak bocor keberadaan user).
+
+### TC-22 — Reset password (single-use) 
+Pakai `RESET_TOKEN` dari TC-21.
+1. `POST /auth/reset-password` body `{"token":"deadbeef","new_password":"resetPass789"}`
+   → **`400 INVALID_RESET_TOKEN`**.
+2. `POST /auth/reset-password` body `{"token":"$RESET_TOKEN","new_password":"resetPass789"}`
+   → **`200`**.
+3. Ulang langkah 2 (token sama) → **`400 INVALID_RESET_TOKEN`** (sekali pakai).
+4. Login `$USER_EMAIL`/`resetPass789` → **`200`**; login password lama → **`401`**.
+- **Auth guard:** `change-password`/`logout` tanpa Bearer → **`401`**;
+  `reset-password` `new_password` < 6 char → **`400 VALIDATION_ERROR`**.
+
 ## Teardown (opsional)
 ```sql
-DELETE FROM users WHERE email LIKE 'qa%@%';
+DELETE FROM password_reset_tokens WHERE user_id IN (SELECT id FROM users WHERE email LIKE 'qa%@%' OR email LIKE 'tier1b_%@%');
+DELETE FROM users WHERE email LIKE 'qa%@%' OR email LIKE 'tier1b_%@%';
 ```
 
 ## Roadmap (PENDING)
-- Endpoint ubah role (promote/demote via API) · forgot/reset password · revoke refresh token.
+- (selesai: ubah role · forgot/reset password · logout/revoke refresh) — lanjutan: 2FA / audit log login.

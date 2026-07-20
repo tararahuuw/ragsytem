@@ -55,7 +55,12 @@ func Migrate(db *gorm.DB) error {
 		&chatmodel.Session{},
 		&chatmodel.Message{},
 		&orgmodel.Organization{},
+		&usermodel.PasswordResetToken{},
 	); err != nil {
+		return err
+	}
+	// Backfill token_version for rows created before the column existed.
+	if err := db.Exec(`UPDATE users SET token_version = 1 WHERE token_version IS NULL OR token_version = 0`).Error; err != nil {
 		return err
 	}
 	// Seed organizations from org codes already present on users, so existing

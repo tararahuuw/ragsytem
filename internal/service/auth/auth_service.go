@@ -10,6 +10,7 @@ import (
 
 	authdto "github.com/tararahuuw/ragsytem/internal/dto/auth"
 	userdto "github.com/tararahuuw/ragsytem/internal/dto/user"
+	"github.com/tararahuuw/ragsytem/internal/infra/email"
 	appjwt "github.com/tararahuuw/ragsytem/internal/jwt"
 	"github.com/tararahuuw/ragsytem/internal/logger"
 	usermodel "github.com/tararahuuw/ragsytem/internal/model/user"
@@ -23,6 +24,8 @@ var (
 	ErrInvalidCredentials = errors.New("invalid email or password")
 	ErrInvalidRefresh     = errors.New("invalid or expired refresh token")
 	ErrInvalidOrg         = errors.New("organization is unknown or inactive")
+	ErrInvalidOldPassword = errors.New("current password is incorrect")
+	ErrInvalidResetToken  = errors.New("invalid or expired reset token")
 )
 
 // OrgValidator checks that an organization code is known and active. Implemented
@@ -31,12 +34,14 @@ type OrgValidator interface {
 	ExistsActive(ctx context.Context, code string) (bool, error)
 }
 
-// Config carries the JWT settings the auth service needs (decoupled from the
-// global config package).
+// Config carries the settings the auth service needs (decoupled from the global
+// config package).
 type Config struct {
-	Secret     string
-	AccessTTL  time.Duration
-	RefreshTTL time.Duration
+	Secret           string
+	AccessTTL        time.Duration
+	RefreshTTL       time.Duration
+	AppBaseURL       string
+	PasswordResetTTL time.Duration
 }
 
 // Service holds authentication business logic.
@@ -45,18 +50,25 @@ type Service interface {
 	BulkRegister(ctx context.Context, items []authdto.BulkRegisterItem) authdto.BulkRegisterResponse
 	Login(ctx context.Context, req authdto.LoginRequest) (authdto.TokenResponse, error)
 	Refresh(ctx context.Context, req authdto.RefreshRequest) (authdto.TokenResponse, error)
+
+	// Auth security
+	ChangePassword(ctx context.Context, userID uint, req authdto.ChangePasswordRequest) error
+	Logout(ctx context.Context, userID uint) error
+	ForgotPassword(ctx context.Context, req authdto.ForgotPasswordRequest) error
+	ResetPassword(ctx context.Context, req authdto.ResetPasswordRequest) error
 }
 
 type service struct {
-	repo userrepo.Repository
-	org  OrgValidator
-	cfg  Config
+	repo  userrepo.Repository
+	org   OrgValidator
+	email email.Sender
+	cfg   Config
 }
 
-// NewService wires an auth Service over the given user repository, org validator
-// and JWT config.
-func NewService(repo userrepo.Repository, org OrgValidator, cfg Config) Service {
-	return &service{repo: repo, org: org, cfg: cfg}
+// NewService wires an auth Service over the given user repository, org validator,
+// email sender and config.
+func NewService(repo userrepo.Repository, org OrgValidator, emailSender email.Sender, cfg Config) Service {
+	return &service{repo: repo, org: org, email: emailSender, cfg: cfg}
 }
 
 func (s *service) Register(ctx context.Context, req authdto.RegisterRequest) (userdto.UserResponse, error) {
@@ -147,6 +159,12 @@ func (s *service) Refresh(ctx context.Context, req authdto.RefreshRequest) (auth
 		log.Warn("refresh: rejected, user no longer exists", "user_id", claims.UserID)
 		return authdto.TokenResponse{}, ErrInvalidRefresh
 	}
+	// Token version must match — logout / change / reset password bumps it,
+	// invalidating previously-issued refresh tokens.
+	if claims.TokenVersion != u.TokenVersion {
+		log.Warn("refresh: rejected, token version mismatch (revoked)", "user_id", u.ID)
+		return authdto.TokenResponse{}, ErrInvalidRefresh
+	}
 
 	tokens, err := s.issueTokens(u)
 	if err != nil {
@@ -159,11 +177,11 @@ func (s *service) Refresh(ctx context.Context, req authdto.RefreshRequest) (auth
 }
 
 func (s *service) issueTokens(u *usermodel.User) (authdto.TokenResponse, error) {
-	access, err := appjwt.Generate(s.cfg.Secret, u.ID, u.Email, u.OrganizationCode, u.Role, appjwt.TypeAccess, s.cfg.AccessTTL)
+	access, err := appjwt.Generate(s.cfg.Secret, u.ID, u.Email, u.OrganizationCode, u.Role, u.TokenVersion, appjwt.TypeAccess, s.cfg.AccessTTL)
 	if err != nil {
 		return authdto.TokenResponse{}, err
 	}
-	refresh, err := appjwt.Generate(s.cfg.Secret, u.ID, u.Email, u.OrganizationCode, u.Role, appjwt.TypeRefresh, s.cfg.RefreshTTL)
+	refresh, err := appjwt.Generate(s.cfg.Secret, u.ID, u.Email, u.OrganizationCode, u.Role, u.TokenVersion, appjwt.TypeRefresh, s.cfg.RefreshTTL)
 	if err != nil {
 		return authdto.TokenResponse{}, err
 	}

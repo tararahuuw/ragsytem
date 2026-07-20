@@ -49,6 +49,17 @@ type Config struct {
 	RateLimitAuthPerMin   int
 	RateLimitChatPerMin   int
 	RateLimitUploadPerMin int
+
+	// Email / SMTP (empty host = mock: log emails instead of sending)
+	SMTPHost     string
+	SMTPPort     string
+	SMTPUsername string
+	SMTPPassword string
+	SMTPFrom     string
+
+	// App base URL (used to build password-reset links) + reset token TTL.
+	AppBaseURL       string
+	PasswordResetTTL time.Duration
 }
 
 // Load reads configuration from the environment. It silently loads a .env file
@@ -90,6 +101,15 @@ func Load() *Config {
 		RateLimitAuthPerMin:   int(getEnvInt64("RATELIMIT_AUTH_PER_MIN", 20)),   // anti brute-force (per IP)
 		RateLimitChatPerMin:   int(getEnvInt64("RATELIMIT_CHAT_PER_MIN", 20)),   // AI mahal (per user)
 		RateLimitUploadPerMin: int(getEnvInt64("RATELIMIT_UPLOAD_PER_MIN", 300)), // chunked = banyak req (per user)
+
+		SMTPHost:     getEnv("SMTP_HOST", ""), // kosong = mock (log email)
+		SMTPPort:     getEnv("SMTP_PORT", "587"),
+		SMTPUsername: getEnv("SMTP_USERNAME", ""),
+		SMTPPassword: getEnv("SMTP_PASSWORD", ""),
+		SMTPFrom:     getEnv("SMTP_FROM", "no-reply@ragsystem.local"),
+
+		AppBaseURL:       getEnv("APP_BASE_URL", "http://localhost:8080"),
+		PasswordResetTTL: getEnvDuration("PASSWORD_RESET_TTL", 30*time.Minute),
 	}
 }
 

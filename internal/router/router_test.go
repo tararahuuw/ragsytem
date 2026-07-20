@@ -120,7 +120,7 @@ func TestRBAC_AdminOnlyRoutes(t *testing.T) {
 	gdb, _ := newMockGorm(t)
 	r := router.New(&config.Config{AppEnv: "test", JWTSecret: secret}, gdb, nil)
 
-	userTok, _ := appjwt.Generate(secret, 1, "u@x.com", "pln", "user", appjwt.TypeAccess, time.Minute)
+	userTok, _ := appjwt.Generate(secret, 1, "u@x.com", "pln", "user", 1, appjwt.TypeAccess, time.Minute)
 
 	cases := []struct {
 		name, method, path, auth string

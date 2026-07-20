@@ -41,7 +41,7 @@ func TestJWTAuth_MissingHeader(t *testing.T) {
 func TestJWTAuth_RefreshTokenRejected(t *testing.T) {
 	secret := "s"
 	// A refresh token must not be accepted as an access token.
-	tok, _ := appjwt.Generate(secret, 1, "a@b.com", "pln", "user", appjwt.TypeRefresh, time.Minute)
+	tok, _ := appjwt.Generate(secret, 1, "a@b.com", "pln", "user", 1, appjwt.TypeRefresh, time.Minute)
 	r := newProtectedRouter(secret)
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/x/ping", nil)
@@ -54,7 +54,7 @@ func TestJWTAuth_RefreshTokenRejected(t *testing.T) {
 
 func TestJWTAuth_ValidAccessToken(t *testing.T) {
 	secret := "s"
-	tok, _ := appjwt.Generate(secret, 7, "a@b.com", "pln", "user", appjwt.TypeAccess, time.Minute)
+	tok, _ := appjwt.Generate(secret, 7, "a@b.com", "pln", "user", 1, appjwt.TypeAccess, time.Minute)
 	r := newProtectedRouter(secret)
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/x/ping", nil)
@@ -80,7 +80,7 @@ func TestRequireRole(t *testing.T) {
 	grp.GET("/ping", func(c *gin.Context) { c.Status(http.StatusOK) })
 
 	call := func(role string) int {
-		tok, _ := appjwt.Generate(secret, 1, "a@b.com", "pln", role, appjwt.TypeAccess, time.Minute)
+		tok, _ := appjwt.Generate(secret, 1, "a@b.com", "pln", role, 1, appjwt.TypeAccess, time.Minute)
 		w := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodGet, "/admin/ping", nil)
 		req.Header.Set("Authorization", "Bearer "+tok)

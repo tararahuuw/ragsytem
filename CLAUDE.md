@@ -296,6 +296,8 @@ Semua via environment variable (lihat `.env.example`). Default aman untuk local.
 | `UPLOAD_MAX_FILE_SIZE` / `UPLOAD_PREVIEW_EXPIRY` | 524288000 (500MB) / 3h | cap ukuran file & umur presigned URL |
 | `AI_BASE_URL` / `AI_TOKEN` / `AI_TIMEOUT` | (kosong) / (kosong) / 30s | RAG service tim AI (kosong = mock) |
 | `RATELIMIT_ENABLED` / `RATELIMIT_AUTH_PER_MIN` / `RATELIMIT_CHAT_PER_MIN` / `RATELIMIT_UPLOAD_PER_MIN` | true / 20 / 20 / 300 | rate limit per-menit (§4d) |
+| `SMTP_HOST` / `SMTP_PORT` / `SMTP_USERNAME` / `SMTP_PASSWORD` / `SMTP_FROM` | (kosong) / 587 / (kosong) / (kosong) / no-reply@ragsystem.local | Email (forgot-password). **`SMTP_HOST` kosong = mock** (token di-log, tak dikirim) — §8d |
+| `APP_BASE_URL` / `PASSWORD_RESET_TTL` | http://localhost:8080 / 30m | base URL link reset + umur token reset |
 
 ---
 
@@ -344,7 +346,9 @@ make run              # server :8080
       **question ≤4000**, **AI call ber-timeout** (`AI_TIMEOUT`), CreateSession **idempotent**
       (race-safe), unit test service. **AI client = mock via `ai.NewClient(cfg)`** — set
       `AI_BASE_URL` untuk swap ke client asli (§8c) saat kontrak tim AI siap.
-- [ ] Auth lanjutan: forgot/reset password, revoke refresh token.
+- [x] **Auth security (Tier-1b)**: change-password (authenticated), logout/revoke, forgot +
+      reset password via email. **Revocation via `token_version`** (claim `ver`) — logout/change/
+      reset bump versi → refresh token lama invalid. Email **adapter mockable** (§8d). Smoke 18/18.
 
 > Referensi desain sistem serupa yang sudah jadi: lihat `../elarch/CLAUDE.md` (pola upload
 > chunked, proxy LLM/OCR, access-control retrieval, chat history).
@@ -429,7 +433,48 @@ URL/kontrak **configurable + mockable** (karena kontrak belum final). Filter ret
 
 ---
 
+## 8d. Auth security (Tier-1b) — revocation & email 🔑
+
+Melengkapi auth: **change-password**, **logout**, **forgot/reset password**. Lihat ROUTES.md
+(module auth) untuk kontrak per-endpoint.
+
+**Revocation via `token_version` (bukan Redis blacklist).** Kolom `users.token_version` (default 1)
+di-embed ke JWT sebagai claim **`ver`**. `/auth/refresh` menolak (`401`) bila `ver` ≠
+`token_version` DB. **logout / change-password / reset-password** menaikkan `token_version`
+(satu statement `UpdateColumn`/`Updates` — race-safe) → semua refresh token lama tercabut.
+- **Trade-off (disengaja):** access token yang sudah terbit tetap sah sampai TTL habis (default
+  15 mnt) — tak ada pengecekan per-request (menghindari dependency Redis/roundtrip DB tiap hit).
+  Revocation efektif di titik refresh; jendela residual ≤ access TTL. Untuk revocation instan →
+  perpendek `JWT_ACCESS_TTL` atau (nanti) blacklist Redis.
+
+**Password reset (aman by default).** `password_reset_tokens` (user_id, token_hash, expires_at,
+used_at). Token acak `crypto/rand` 32-byte hex; **DB simpan hanya SHA-256-nya** (plaintext hanya
+di email). **Single-use** (`used_at`), TTL `PASSWORD_RESET_TTL` (30 mnt), request baru
+men-supersede token lama (`InvalidateUserResetTokens`). **Anti user-enumeration:**
+`/auth/forgot-password` **selalu** `200` (email ada/tidak, bahkan saat error internal).
+
+**Email adapter (mockable) — `internal/infra/email`.** Interface `Sender.Send(ctx, to, subject,
+body)`; factory `NewSender(cfg)` pilih impl by config: `SMTP_HOST` diset → `smtpSender`
+(`net/smtp`, PlainAuth bila username ada); **kosong → `logSender`** (log `WARN "email (MOCK, not
+sent)"` berisi body+token) supaya alur forgot/reset jalan penuh di dev tanpa SMTP. Pola sama
+seperti AI client (`ai.NewClient`) — swap real/mock tanpa ubah caller.
+
+---
+
 ## 9. Changelog keputusan (append di sini)
+
+- **2026-07-20** — **Auth security Tier-1b** (change-password · logout/revoke · forgot/reset
+  password via email, via /rag-dev). §8d. **Revocation `token_version`** (claim `ver`): kolom
+  `users.token_version` + backfill; logout/change/reset bump versi → `/auth/refresh` tolak token
+  lama (`401`); access token residual ≤ TTL (trade-off, no-Redis). **Reset password**: tabel
+  `password_reset_tokens` (token disimpan **SHA-256**, single-use, TTL 30 mnt, supersede token
+  lama); `forgot` **selalu 200** (anti-enumeration). **Email adapter** `internal/infra/email`
+  (SMTP asli / **mock log** bila `SMTP_HOST` kosong) — factory `NewSender(cfg)`. Endpoint baru:
+  `POST /auth/{change-password,logout}` (Bearer), `POST /auth/{forgot-password,reset-password}`
+  (publik, rate-limit `auth`). Config `SMTP_*`, `APP_BASE_URL`, `PASSWORD_RESET_TTL`. `jwt.Generate`
+  dapat param `tokenVersion`. Build/vet/test hijau; **smoke 18/18 PASS** (change→revoke refresh,
+  logout→revoke, forgot→mock-email→reset single-use, login pw baru). **Lanjutan (belum): 2FA,
+  audit log login, blacklist access token (Redis) bila butuh revoke instan.**
 
 - **2026-07-19** — **Module `organization`** (Tier-1 fondasi tenant, via /rag-dev). Tabel
   `organizations` (code PK, name, description, active, soft-delete) + **seed** dari org codes

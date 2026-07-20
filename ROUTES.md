@@ -26,6 +26,10 @@ Base URL: `http://localhost:8080/api/v1` · Envelope: `internal/response` (`Base
 | POST | `/auth/register/bulk` | auth | **admin** | Buat banyak user sekaligus (partial success, password auto-generate) |
 | POST | `/auth/login` | auth | – | Login → access + refresh JWT |
 | POST | `/auth/refresh` | auth | – | Tukar refresh token → token pair baru |
+| POST | `/auth/change-password` | auth | Bearer | Ubah password sendiri (revoke sesi lama) |
+| POST | `/auth/logout` | auth | Bearer | Revoke refresh token milik sendiri |
+| POST | `/auth/forgot-password` | auth | – | Minta link reset password via email (selalu 200) |
+| POST | `/auth/reset-password` | auth | – | Set password baru pakai token reset (sekali pakai) |
 | GET | `/users/me` | user | Bearer | Profil user dari token |
 | GET | `/users/{id}` | user | Bearer | Ambil user (user: se-org · admin: global) |
 | PUT | `/users/{id}` | user | Bearer | Update name/password (user: se-org · admin: global) |
@@ -51,7 +55,7 @@ selain itu `ip:<client-ip>` (cocok untuk endpoint publik/brute-force). Lampaui l
 
 | Kategori | Endpoint | Default limit | Key | Alasan |
 |---|---|---|---|---|
-| `auth` | `POST /auth/login`, `/auth/refresh` | 20/menit | **per-IP** | anti brute-force (hitung login gagal juga) |
+| `auth` | `POST /auth/login`, `/auth/refresh`, `/auth/forgot-password`, `/auth/reset-password` | 20/menit | **per-IP** | anti brute-force + anti abuse/enumeration reset |
 | `chat` | `POST /chat/ask` | 20/menit | per-user | endpoint AI mahal |
 | `upload` | `POST /uploads/chunk` | 300/menit | per-user | chunked = banyak request/file (perlu longgar) |
 
@@ -162,6 +166,65 @@ Single-instance (in-memory + janitor evict idle). Multi-instance → nanti pakai
 - **Response:** `200` (data `TokenResponse`) · `400 VALIDATION_ERROR` ·
   `401 INVALID_REFRESH_TOKEN`.
 - **Logging:** WARN token invalid · INFO `refresh: success`.
+- **Revocation (token_version):** refresh **juga** menolak (`401`) jika `ver` di token ≠
+  `users.token_version` — dipakai oleh logout / change-password / reset-password untuk
+  membatalkan sesi lama (lihat di bawah).
+
+### Revocation model (token_version) 🔑
+Kolom `users.token_version` (default 1) di-embed ke JWT sebagai claim **`ver`**. Setiap
+**logout / change-password / reset-password** menaikkan `token_version` → semua refresh token
+lama otomatis invalid (cek di `/auth/refresh`). **Trade-off:** access token yang sudah terbit
+tetap sah sampai TTL-nya habis (default 15 mnt) — tak ada blacklist per-request (menghindari
+dependency Redis). Ini disengaja: revocation efektif di titik refresh, jendela residual ≤ TTL
+access.
+
+### POST `/auth/change-password`  🔒 (Bearer)
+- **Tujuan:** user mengganti passwordnya sendiri. **Auth:** Bearer access token (user id dari token).
+- **Request (`authdto.ChangePasswordRequest`):** `old_password`, `new_password` (min 6).
+- **Bisnis logic:**
+  1. `FindByID` (dari token) → verifikasi `old_password` via bcrypt; salah → `400
+     INVALID_OLD_PASSWORD`.
+  2. Hash `new_password` (bcrypt) → `SetPasswordAndBumpVersion` (update password **+**
+     `token_version+1` dalam satu statement) → **semua refresh token lama tercabut**.
+- **Response:** `200` ("silakan login ulang") · `400 VALIDATION_ERROR`/`INVALID_OLD_PASSWORD` ·
+  `401` (tanpa token).
+- **Logging:** WARN old-password salah · INFO `change password: success`.
+
+### POST `/auth/logout`  🔒 (Bearer)
+- **Tujuan:** cabut sesi (refresh token) milik sendiri. **Auth:** Bearer access token.
+- **Request:** tanpa body.
+- **Bisnis logic:** `BumpTokenVersion` (user id dari token) → refresh token lama → `401` di
+  `/auth/refresh`. Access token tetap sah sampai TTL habis (lihat revocation model).
+- **Response:** `200` · `401` (tanpa token).
+- **Logging:** INFO `logout: success`.
+
+### POST `/auth/forgot-password`
+- **Tujuan:** mulai alur reset password. **Auth:** publik (rate-limited `auth`, per-IP).
+- **Request (`authdto.ForgotPasswordRequest`):** `email`.
+- **Bisnis logic (anti user-enumeration):**
+  1. `FindByEmail`; jika **tidak** ada / error internal → **tetap** balas `200` (tak membocorkan
+     keberadaan email).
+  2. Jika ada: `InvalidateUserResetTokens` (supersede token lama) → generate token acak
+     (`crypto/rand` 32 byte hex) → simpan **hanya SHA-256-nya** (`password_reset_tokens`,
+     `expires_at = now + PASSWORD_RESET_TTL`, default 30 mnt) → kirim link
+     `{APP_BASE_URL}/reset-password?token=<plain>` via email.
+- **Email adapter:** `internal/infra/email` — SMTP asli bila `SMTP_HOST` diset, else **mock**
+  (log `WARN "email (MOCK, not sent)"` berisi token) supaya alur dev jalan tanpa SMTP.
+- **Response:** **selalu `200`** ("Jika email terdaftar, tautan reset telah dikirim.") ·
+  `400 VALIDATION_ERROR` (email tak valid) · `429 RATE_LIMITED`.
+- **Logging:** INFO reset token issued / "no such active user (silently ok)".
+
+### POST `/auth/reset-password`
+- **Tujuan:** set password baru dengan token dari email. **Auth:** publik (rate-limited `auth`).
+- **Request (`authdto.ResetPasswordRequest`):** `token`, `new_password` (min 6).
+- **Bisnis logic:**
+  1. SHA-256 token → `FindValidResetToken` (`used_at IS NULL AND expires_at > now`); tak ketemu →
+     `400 INVALID_RESET_TOKEN` (invalid / kedaluwarsa / sudah dipakai).
+  2. Hash `new_password` → `SetPasswordAndBumpVersion` (revoke sesi lama) → `MarkResetTokenUsed`
+     (**sekali pakai**).
+- **Response:** `200` ("silakan login") · `400 VALIDATION_ERROR`/`INVALID_RESET_TOKEN` ·
+  `429 RATE_LIMITED`.
+- **Logging:** WARN token invalid/expired · INFO `reset password: success`.
 
 ---
 

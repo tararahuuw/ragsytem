@@ -26,18 +26,20 @@ type Claims struct {
 	Email            string `json:"email"`
 	OrganizationCode string `json:"organization_code"`
 	Role             string `json:"role"`
+	TokenVersion     int    `json:"ver"`
 	TokenType        string `json:"token_type"`
 	jwtlib.RegisteredClaims
 }
 
 // Generate signs a token of the given type with the provided TTL.
-func Generate(secret string, userID uint, email, orgCode, role, tokenType string, ttl time.Duration) (string, error) {
+func Generate(secret string, userID uint, email, orgCode, role string, tokenVersion int, tokenType string, ttl time.Duration) (string, error) {
 	now := time.Now()
 	claims := Claims{
 		UserID:           userID,
 		Email:            email,
 		OrganizationCode: orgCode,
 		Role:             role,
+		TokenVersion:     tokenVersion,
 		TokenType:        tokenType,
 		RegisteredClaims: jwtlib.RegisteredClaims{
 			IssuedAt:  jwtlib.NewNumericDate(now),

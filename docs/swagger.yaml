@@ -45,6 +45,27 @@ definitions:
         description: shown once, only on success
         type: string
     type: object
+  auth.ChangePasswordRequest:
+    properties:
+      new_password:
+        example: newSecret456
+        minLength: 6
+        type: string
+      old_password:
+        example: secret123
+        type: string
+    required:
+    - new_password
+    - old_password
+    type: object
+  auth.ForgotPasswordRequest:
+    properties:
+      email:
+        example: john@example.com
+        type: string
+    required:
+    - email
+    type: object
   auth.LoginRequest:
     properties:
       email:
@@ -84,6 +105,18 @@ definitions:
     - name
     - organization_code
     - password
+    type: object
+  auth.ResetPasswordRequest:
+    properties:
+      new_password:
+        example: newSecret456
+        minLength: 6
+        type: string
+      token:
+        type: string
+    required:
+    - new_password
+    - token
     type: object
   auth.TokenResponse:
     properties:
@@ -331,6 +364,70 @@ info:
   title: RAG System API
   version: "1.0"
 paths:
+  /auth/change-password:
+    post:
+      consumes:
+      - application/json
+      description: Authenticated. Verifies the current password, sets a new one, and
+        revokes existing sessions.
+      parameters:
+      - description: Passwords
+        in: body
+        name: payload
+        required: true
+        schema:
+          $ref: '#/definitions/auth.ChangePasswordRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.BaseResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Change password
+      tags:
+      - auth
+  /auth/forgot-password:
+    post:
+      consumes:
+      - application/json
+      description: Public. Sends a password-reset link if the email exists. Always
+        returns 200 (anti user-enumeration).
+      parameters:
+      - description: Email
+        in: body
+        name: payload
+        required: true
+        schema:
+          $ref: '#/definitions/auth.ForgotPasswordRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.BaseResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+      summary: Forgot password
+      tags:
+      - auth
   /auth/login:
     post:
       consumes:
@@ -369,6 +466,26 @@ paths:
           schema:
             $ref: '#/definitions/response.ErrorResponse'
       summary: Login
+      tags:
+      - auth
+  /auth/logout:
+    post:
+      description: Authenticated. Revokes the caller's refresh tokens (access tokens
+        expire within their TTL).
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.BaseResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Logout
       tags:
       - auth
   /auth/refresh:
@@ -499,6 +616,37 @@ paths:
       security:
       - BearerAuth: []
       summary: Bulk register users (admin only)
+      tags:
+      - auth
+  /auth/reset-password:
+    post:
+      consumes:
+      - application/json
+      description: Public. Sets a new password using a valid reset token, then revokes
+        existing sessions.
+      parameters:
+      - description: Token + new password
+        in: body
+        name: payload
+        required: true
+        schema:
+          $ref: '#/definitions/auth.ResetPasswordRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.BaseResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+      summary: Reset password
       tags:
       - auth
   /chat/ask:

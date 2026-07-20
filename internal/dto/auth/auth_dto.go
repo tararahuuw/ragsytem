@@ -47,6 +47,23 @@ type RefreshRequest struct {
 	RefreshToken string `json:"refresh_token" binding:"required"`
 }
 
+// ChangePasswordRequest is the payload for POST /auth/change-password.
+type ChangePasswordRequest struct {
+	OldPassword string `json:"old_password" binding:"required" example:"secret123"`
+	NewPassword string `json:"new_password" binding:"required,min=6" example:"newSecret456"`
+}
+
+// ForgotPasswordRequest is the payload for POST /auth/forgot-password.
+type ForgotPasswordRequest struct {
+	Email string `json:"email" binding:"required,email" example:"john@example.com"`
+}
+
+// ResetPasswordRequest is the payload for POST /auth/reset-password.
+type ResetPasswordRequest struct {
+	Token       string `json:"token" binding:"required"`
+	NewPassword string `json:"new_password" binding:"required,min=6" example:"newSecret456"`
+}
+
 // TokenResponse carries the issued JWT pair.
 type TokenResponse struct {
 	AccessToken  string `json:"access_token"`

@@ -140,7 +140,61 @@
               "options": { "raw": { "language": "json" } }
             },
             "url": { "raw": "{{base_url}}/auth/refresh", "host": ["{{base_url}}"], "path": ["auth", "refresh"] },
-            "description": "Tukar refresh token → token pair baru. 401 jika token invalid / bukan tipe refresh."
+            "description": "Tukar refresh token → token pair baru. 401 jika token invalid / bukan tipe refresh / token_version mismatch (revoked)."
+          }
+        },
+        {
+          "name": "Change Password",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{access_token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"old_password\": \"{{password}}\",\n  \"new_password\": \"newSecret456\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{base_url}}/auth/change-password", "host": ["{{base_url}}"], "path": ["auth", "change-password"] },
+            "description": "Ubah password sendiri (Bearer). 200 → refresh token lama tercabut (token_version bump), login ulang. 400 INVALID_OLD_PASSWORD bila old_password salah."
+          }
+        },
+        {
+          "name": "Logout",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }],
+            "url": { "raw": "{{base_url}}/auth/logout", "host": ["{{base_url}}"], "path": ["auth", "logout"] },
+            "description": "Revoke refresh token milik sendiri (token_version bump). 200. Access token tetap sah sampai TTL habis."
+          }
+        },
+        {
+          "name": "Forgot Password",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{email}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{base_url}}/auth/forgot-password", "host": ["{{base_url}}"], "path": ["auth", "forgot-password"] },
+            "description": "Minta link reset. SELALU 200 (anti user-enumeration). Tanpa SMTP → token muncul di log server (WARN 'email (MOCK, not sent)'). Salin token ke {{reset_token}} untuk Reset Password."
+          }
+        },
+        {
+          "name": "Reset Password",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token\": \"{{reset_token}}\",\n  \"new_password\": \"resetPass789\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{base_url}}/auth/reset-password", "host": ["{{base_url}}"], "path": ["auth", "reset-password"] },
+            "description": "Set password baru pakai token dari email (sekali pakai). 200 → login ulang. 400 INVALID_RESET_TOKEN bila token invalid/kedaluwarsa/sudah dipakai."
           }
         }
       ]

@@ -9,7 +9,7 @@ import (
 
 func TestGenerateParse_Roundtrip(t *testing.T) {
 	secret := "s3cr3t"
-	tok, err := appjwt.Generate(secret, 42, "john@example.com", "pln", "admin", appjwt.TypeAccess, time.Minute)
+	tok, err := appjwt.Generate(secret, 42, "john@example.com", "pln", "admin", 1, appjwt.TypeAccess, time.Minute)
 	if err != nil {
 		t.Fatalf("generate: %v", err)
 	}
@@ -34,14 +34,14 @@ func TestGenerateParse_Roundtrip(t *testing.T) {
 }
 
 func TestParse_WrongSecret(t *testing.T) {
-	tok, _ := appjwt.Generate("right", 1, "a@b.com", "pln", "user", appjwt.TypeAccess, time.Minute)
+	tok, _ := appjwt.Generate("right", 1, "a@b.com", "pln", "user", 1, appjwt.TypeAccess, time.Minute)
 	if _, err := appjwt.Parse("wrong", tok); err == nil {
 		t.Fatal("expected error for wrong secret")
 	}
 }
 
 func TestParse_Expired(t *testing.T) {
-	tok, _ := appjwt.Generate("s", 1, "a@b.com", "pln", "user", appjwt.TypeAccess, -time.Minute)
+	tok, _ := appjwt.Generate("s", 1, "a@b.com", "pln", "user", 1, appjwt.TypeAccess, -time.Minute)
 	if _, err := appjwt.Parse("s", tok); err == nil {
 		t.Fatal("expected error for expired token")
 	}
