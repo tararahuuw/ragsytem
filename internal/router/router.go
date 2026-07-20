@@ -15,6 +15,7 @@ import (
 	chatroute "github.com/tararahuuw/ragsytem/internal/router/chat"
 	documentroute "github.com/tararahuuw/ragsytem/internal/router/document"
 	healthroute "github.com/tararahuuw/ragsytem/internal/router/health"
+	orgroute "github.com/tararahuuw/ragsytem/internal/router/organization"
 	uploadroute "github.com/tararahuuw/ragsytem/internal/router/upload"
 	userroute "github.com/tararahuuw/ragsytem/internal/router/user"
 )
@@ -57,6 +58,7 @@ func New(cfg *config.Config, db *gorm.DB, store *minioinfra.Client) *gin.Engine 
 	healthroute.Register(v1, db)
 	authroute.Register(v1, cfg, db, rl)
 	userroute.Register(v1, cfg, db)
+	orgroute.Register(v1, cfg, db)
 	uploadroute.Register(v1, cfg, db, store, rl)
 	documentroute.Register(v1, cfg, db, store)
 	chatroute.Register(v1, cfg, db, rl)

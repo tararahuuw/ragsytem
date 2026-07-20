@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 
 	"golang.org/x/crypto/bcrypt"
@@ -21,7 +22,14 @@ var (
 	ErrEmailTaken         = errors.New("email already registered")
 	ErrInvalidCredentials = errors.New("invalid email or password")
 	ErrInvalidRefresh     = errors.New("invalid or expired refresh token")
+	ErrInvalidOrg         = errors.New("organization is unknown or inactive")
 )
+
+// OrgValidator checks that an organization code is known and active. Implemented
+// by the organization repository (keeps auth decoupled from that module).
+type OrgValidator interface {
+	ExistsActive(ctx context.Context, code string) (bool, error)
+}
 
 // Config carries the JWT settings the auth service needs (decoupled from the
 // global config package).
@@ -41,17 +49,24 @@ type Service interface {
 
 type service struct {
 	repo userrepo.Repository
+	org  OrgValidator
 	cfg  Config
 }
 
-// NewService wires an auth Service over the given user repository and JWT config.
-func NewService(repo userrepo.Repository, cfg Config) Service {
-	return &service{repo: repo, cfg: cfg}
+// NewService wires an auth Service over the given user repository, org validator
+// and JWT config.
+func NewService(repo userrepo.Repository, org OrgValidator, cfg Config) Service {
+	return &service{repo: repo, org: org, cfg: cfg}
 }
 
 func (s *service) Register(ctx context.Context, req authdto.RegisterRequest) (userdto.UserResponse, error) {
 	log := logger.FromContext(ctx)
 	log.Info("register: attempt", "email", req.Email, "organization_code", req.OrganizationCode)
+
+	orgCode := strings.TrimSpace(req.OrganizationCode)
+	if err := s.validateOrg(ctx, orgCode); err != nil {
+		return userdto.UserResponse{}, err
+	}
 
 	exists, err := s.repo.ExistsByEmail(ctx, req.Email)
 	if err != nil {
@@ -75,7 +90,7 @@ func (s *service) Register(ctx context.Context, req authdto.RegisterRequest) (us
 		Name:             req.Name,
 		Email:            req.Email,
 		Password:         string(hash),
-		OrganizationCode: req.OrganizationCode,
+		OrganizationCode: orgCode,
 		Role:             rbac.RoleUser,
 	}
 	if err := s.repo.Create(ctx, u); err != nil {
@@ -158,6 +173,21 @@ func (s *service) issueTokens(u *usermodel.User) (authdto.TokenResponse, error) 
 		TokenType:    "Bearer",
 		ExpiresIn:    int64(s.cfg.AccessTTL.Seconds()),
 	}, nil
+}
+
+// validateOrg ensures the organization code is known and active.
+func (s *service) validateOrg(ctx context.Context, code string) error {
+	log := logger.FromContext(ctx)
+	ok, err := s.org.ExistsActive(ctx, code)
+	if err != nil {
+		log.Error("register: org validation failed", "organization_code", code, "error", err)
+		return err
+	}
+	if !ok {
+		log.Warn("register: rejected, unknown/inactive organization", "organization_code", code)
+		return ErrInvalidOrg
+	}
+	return nil
 }
 
 func toUserResponse(u *usermodel.User) userdto.UserResponse {

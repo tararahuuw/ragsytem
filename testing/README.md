@@ -83,5 +83,6 @@ Ringkasan: 1 PASS, 1 FAIL
 | `authentication_test.md` | Auth (register/login/refresh) + User (me/get/update/role/soft-delete), JWT + RBAC + multi-tenant | READY |
 | `upload_test.md` | Upload chunked (PDF) → MinIO → compose → presigned + Document (list/get, tenant-scoped) | READY |
 | `chat_test.md` | Conversation / RAG Q&A (ask, sessions list/detail/delete), AI mock, per-user scope | READY |
+| `organization_test.md` | Organization CRUD + guard organization_code (register/bulk validasi org) | READY |
 
 Tambahkan baris baru di tabel ini setiap kali membuat playbook baru.

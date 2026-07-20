@@ -73,6 +73,16 @@ func (s *service) registerOne(ctx context.Context, index int, item authdto.BulkR
 	}
 	seen[email] = true
 
+	orgCode := strings.TrimSpace(item.OrganizationCode)
+	if okOrg, err := s.org.ExistsActive(ctx, orgCode); err != nil {
+		log.Error("bulk register: org validation failed", "org", orgCode, "error", err)
+		res.ErrorCode, res.Error = "INTERNAL_ERROR", "gagal memvalidasi organization"
+		return res
+	} else if !okOrg {
+		res.ErrorCode, res.Error = "INVALID_ORGANIZATION", "organization tidak dikenal atau tidak aktif"
+		return res
+	}
+
 	exists, err := s.repo.ExistsByEmail(ctx, item.Email)
 	if err != nil {
 		log.Error("bulk register: exists check failed", "email", email, "error", err)
@@ -101,7 +111,7 @@ func (s *service) registerOne(ctx context.Context, index int, item authdto.BulkR
 		Name:             item.Name,
 		Email:            item.Email,
 		Password:         string(hash),
-		OrganizationCode: item.OrganizationCode,
+		OrganizationCode: orgCode,
 		Role:             rbac.RoleUser,
 	}
 	if err := s.repo.Create(ctx, u); err != nil {

@@ -17,7 +17,12 @@ Base URL: `http://localhost:8080/api/v1` · Envelope: `internal/response` (`Base
 | Method | Path | Module | Auth | Ringkas |
 |---|---|---|---|---|
 | GET | `/healthz` | health | – | Cek kesehatan service + DB |
-| POST | `/auth/register` | auth | **admin** | Buat user baru (role selalu `user`), bcrypt |
+| POST | `/organizations` | organization | **admin** | Buat organization (tenant) |
+| GET | `/organizations` | organization | Bearer | List organization |
+| GET | `/organizations/{code}` | organization | Bearer | Detail organization |
+| PUT | `/organizations/{code}` | organization | **admin** | Update (nama/desc/aktif) |
+| DELETE | `/organizations/{code}` | organization | **admin** | Soft delete (guard: tak ada user) |
+| POST | `/auth/register` | auth | **admin** | Buat user baru (role `user`, **org divalidasi**) |
 | POST | `/auth/register/bulk` | auth | **admin** | Buat banyak user sekaligus (partial success, password auto-generate) |
 | POST | `/auth/login` | auth | – | Login → access + refresh JWT |
 | POST | `/auth/refresh` | auth | – | Tukar refresh token → token pair baru |
@@ -304,6 +309,35 @@ sendiri); `organization_code` dari token diteruskan ke AI sebagai **filter retri
 
 ### DELETE `/chat/sessions/{id}`
 - Hapus sesi + semua pesannya (transaksi). **Hanya pemilik** (else `404`). Response `200`.
+
+## Module: organization  🔒 (Bearer) — registry tenant
+
+**Fondasi multi-tenant.** `organization_code` di seluruh app (user, document, chat, retrieval AI)
+kini **wajib merujuk** `organizations.code` yang **ada & aktif** — bukan string bebas. Kode
+di-normalisasi **trim whitespace** (`"pln "` == `"pln"`). Existing org (`pln`,`icon`) di-seed dari
+users saat migrate. Read (list/get) = semua user login; write = **admin**.
+
+### POST `/organizations`  🔒 admin
+- **Request:** `{code (required, 2-64 alnum/-/_), name (required), description?}`.
+- **Bisnis logic:** validasi format code (`400 INVALID_CODE`) → cek unik (`409 ORG_EXISTS`) → create (active=true).
+- **Response:** `201` · `400 INVALID_CODE` · `401` · `403` · `409 ORG_EXISTS`.
+
+### GET `/organizations` · GET `/organizations/{code}`
+- List semua / detail by code. `404 ORG_NOT_FOUND` bila tak ada.
+
+### PUT `/organizations/{code}`  🔒 admin
+- Update `name`/`description`/`active` (pointer → field diabaikan bila null). **Deactivate**
+  (`active:false`) memblokir registrasi baru ke org itu, **tapi user existing tetap jalan**.
+- **Response:** `200` · `400` · `401` · `403` · `404`.
+
+### DELETE `/organizations/{code}`  🔒 admin
+- **Soft delete**, dengan **guard**: ditolak `409 ORG_HAS_USERS` bila masih ada user aktif.
+- **Response:** `200` · `401` · `403` · `404` · `409 ORG_HAS_USERS`.
+
+### Dampak ke auth (validasi org)
+`POST /auth/register` & `/auth/register/bulk` kini **memvalidasi** `organization_code`
+(`ExistsActive`): org tak dikenal/nonaktif → register `400 INVALID_ORGANIZATION`; bulk → item
+`failed` code `INVALID_ORGANIZATION` (partial success). Org code disimpan ter-trim.
 
 ## Konvensi menulis entri baru
 

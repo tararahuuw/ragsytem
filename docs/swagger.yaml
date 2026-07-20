@@ -194,6 +194,50 @@ definitions:
         example: ok
         type: string
     type: object
+  organization.CreateRequest:
+    properties:
+      code:
+        example: pln
+        type: string
+      description:
+        example: Perusahaan Listrik Negara
+        type: string
+      name:
+        example: PLN (Persero)
+        type: string
+    required:
+    - code
+    - name
+    type: object
+  organization.OrganizationResponse:
+    properties:
+      active:
+        example: true
+        type: boolean
+      code:
+        example: pln
+        type: string
+      created_at:
+        type: string
+      description:
+        type: string
+      name:
+        example: PLN (Persero)
+        type: string
+      updated_at:
+        type: string
+    type: object
+  organization.UpdateRequest:
+    properties:
+      active:
+        example: true
+        type: boolean
+      description:
+        type: string
+      name:
+        example: PLN Persero
+        type: string
+    type: object
   response.BaseResponse:
     properties:
       data: {}
@@ -677,6 +721,197 @@ paths:
       summary: Health check
       tags:
       - health
+  /organizations:
+    get:
+      description: Lists all organizations (any authenticated user).
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.BaseResponse'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/organization.OrganizationResponse'
+                  type: array
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List organizations
+      tags:
+      - organization
+    post:
+      consumes:
+      - application/json
+      description: Admin-only. Registers a valid organization; org codes used elsewhere
+        must exist here.
+      parameters:
+      - description: Organization
+        in: body
+        name: payload
+        required: true
+        schema:
+          $ref: '#/definitions/organization.CreateRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.BaseResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/organization.OrganizationResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Create organization (admin only)
+      tags:
+      - organization
+  /organizations/{code}:
+    delete:
+      description: Admin-only. Soft-deletes an organization. Blocked (409) while it
+        still has active users.
+      parameters:
+      - description: Organization code
+        in: path
+        name: code
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.BaseResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete organization (admin only)
+      tags:
+      - organization
+    get:
+      parameters:
+      - description: Organization code
+        in: path
+        name: code
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.BaseResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/organization.OrganizationResponse'
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get organization by code
+      tags:
+      - organization
+    put:
+      consumes:
+      - application/json
+      description: Admin-only. Update name/description/active. Deactivating blocks
+        new registrations but keeps existing users.
+      parameters:
+      - description: Organization code
+        in: path
+        name: code
+        required: true
+        type: string
+      - description: Fields to update
+        in: body
+        name: payload
+        required: true
+        schema:
+          $ref: '#/definitions/organization.UpdateRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.BaseResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/organization.OrganizationResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Update organization (admin only)
+      tags:
+      - organization
   /uploads/chunk:
     post:
       consumes:

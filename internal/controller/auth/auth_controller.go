@@ -53,6 +53,8 @@ func (c *Controller) Register(ctx *gin.Context) {
 		switch {
 		case errors.Is(err, authsvc.ErrEmailTaken):
 			response.Error(ctx, http.StatusConflict, err.Error(), "EMAIL_TAKEN")
+		case errors.Is(err, authsvc.ErrInvalidOrg):
+			response.Error(ctx, http.StatusBadRequest, "organization tidak dikenal atau tidak aktif", "INVALID_ORGANIZATION")
 		default:
 			log.Error("register: unexpected error", "error", err)
 			response.Error(ctx, http.StatusInternalServerError, "failed to register user", "INTERNAL_ERROR")

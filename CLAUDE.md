@@ -327,6 +327,10 @@ make run              # server :8080
 - [x] **Ubah role via API**: `PATCH /users/{id}/role` (admin-only, admin/user, self-guard).
 - [x] **Bulk register**: `POST /auth/register/bulk` (admin-only, array of user, partial success,
       password auto-generate, maks 100/req).
+- [x] **Organization (registry tenant)**: CRUD `/organizations` (write admin, read auth);
+      `organization_code` tervalidasi di register/bulk (`400 INVALID_ORGANIZATION`); delete-guard
+      `ORG_HAS_USERS`; seed dari users.
+- [x] **Rate limiting** (§4d): auth/chat/upload per-kategori, per-user/IP, `429`.
 - [x] **Upload file besar (chunked)** ala elArch: `POST /uploads/chunk` → MinIO → compose →
       presigned; validasi (PDF/MIME/nama), dedup SHA-256, kuota per-role, cleanup async.
 - [x] **Upload production-hardened** (§8b): reset merge on failure, session janitor, temp-chunk
@@ -427,6 +431,15 @@ URL/kontrak **configurable + mockable** (karena kontrak belum final). Filter ret
 
 ## 9. Changelog keputusan (append di sini)
 
+- **2026-07-19** — **Module `organization`** (Tier-1 fondasi tenant, via /rag-dev). Tabel
+  `organizations` (code PK, name, description, active, soft-delete) + **seed** dari org codes
+  existing users. CRUD: read (list/get) semua user login, write (create/update/delete) **admin**.
+  **`organization_code` kini tervalidasi** — `auth.Register` & `BulkRegister` cek `ExistsActive`
+  (org tak dikenal/nonaktif → `400 INVALID_ORGANIZATION` / item `failed`); code di-**trim**
+  (`"pln "`==`"pln"`). Delete **guard** `409 ORG_HAS_USERS` bila masih ada user aktif; deactivate
+  blokir registrasi baru tapi user existing jalan. Auth service dapat param `OrgValidator`
+  (interface, di-satisfy org repo — auth tetap decoupled dari modul org). Router test + smoke
+  (CRUD/RBAC/guard/register-org) PASS.
 - **2026-07-18** — **Rate limiting** (§4d, adaptasi elArch/Bucket4j → Go in-memory token bucket
   `internal/ratelimit` + `middleware.RateLimit`, via /rag-dev). Dipasang di endpoint yang butuh:
   `auth` (login/refresh, per-IP, anti brute-force — hitung login gagal), `chat` (ask, per-user, AI

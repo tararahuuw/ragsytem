@@ -10,6 +10,7 @@ import (
 
 	"github.com/tararahuuw/ragsytem/internal/config"
 	chatmodel "github.com/tararahuuw/ragsytem/internal/model/chat"
+	orgmodel "github.com/tararahuuw/ragsytem/internal/model/organization"
 	uploadmodel "github.com/tararahuuw/ragsytem/internal/model/upload"
 	usermodel "github.com/tararahuuw/ragsytem/internal/model/user"
 	"github.com/tararahuuw/ragsytem/internal/rbac"
@@ -53,7 +54,18 @@ func Migrate(db *gorm.DB) error {
 		&uploadmodel.UploadQuotaUsage{},
 		&chatmodel.Session{},
 		&chatmodel.Message{},
+		&orgmodel.Organization{},
 	); err != nil {
+		return err
+	}
+	// Seed organizations from org codes already present on users, so existing
+	// data stays valid once org validation is enforced.
+	if err := db.Exec(`
+		INSERT INTO organizations (code, name, active, created_at, updated_at)
+		SELECT DISTINCT organization_code, organization_code, true, now(), now()
+		FROM users
+		WHERE organization_code IS NOT NULL AND organization_code <> ''
+		ON CONFLICT (code) DO NOTHING`).Error; err != nil {
 		return err
 	}
 	// Backfill role for rows created before the column existed.

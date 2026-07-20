@@ -326,12 +326,70 @@
           }
         }
       ]
+    },
+    {
+      "name": "organization",
+      "description": "Registry tenant. organization_code di seluruh app harus merujuk org yang ada & aktif. Read = semua user; write = admin.",
+      "item": [
+        {
+          "name": "List",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }],
+            "url": { "raw": "{{base_url}}/organizations", "host": ["{{base_url}}"], "path": ["organizations"] }
+          }
+        },
+        {
+          "name": "Get",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }],
+            "url": { "raw": "{{base_url}}/organizations/{{organization_code}}", "host": ["{{base_url}}"], "path": ["organizations", "{{organization_code}}"] }
+          }
+        },
+        {
+          "name": "Create (admin)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{access_token}}" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"code\": \"newco\",\n  \"name\": \"New Company\",\n  \"description\": \"\"\n}", "options": { "raw": { "language": "json" } } },
+            "url": { "raw": "{{base_url}}/organizations", "host": ["{{base_url}}"], "path": ["organizations"] },
+            "description": "ADMIN ONLY. 400 code invalid, 409 sudah ada."
+          }
+        },
+        {
+          "name": "Update (admin)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{access_token}}" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"name\": \"Updated\",\n  \"active\": true\n}", "options": { "raw": { "language": "json" } } },
+            "url": { "raw": "{{base_url}}/organizations/{{organization_code}}", "host": ["{{base_url}}"], "path": ["organizations", "{{organization_code}}"] },
+            "description": "ADMIN ONLY. active:false memblokir registrasi baru (user existing tetap jalan)."
+          }
+        },
+        {
+          "name": "Delete (admin)",
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }],
+            "url": { "raw": "{{base_url}}/organizations/{{organization_code}}", "host": ["{{base_url}}"], "path": ["organizations", "{{organization_code}}"] },
+            "description": "ADMIN ONLY. 409 ORG_HAS_USERS kalau masih ada user aktif."
+          }
+        }
+      ]
     }
   ],
   "variable": [
     { "key": "upload_session_id", "value": "", "type": "string" },
     { "key": "document_id", "value": "", "type": "string" },
     { "key": "chat_session_id", "value": "3f2504e0-4f89-41d3-9a0c-0305e82c3301", "type": "string" },
+    { "key": "organization_code", "value": "pln", "type": "string" },
     { "key": "base_url", "value": "http://localhost:8080/api/v1", "type": "string" }
   ]
 }

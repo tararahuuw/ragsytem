@@ -9,6 +9,7 @@ import (
 	"github.com/tararahuuw/ragsytem/internal/middleware"
 	"github.com/tararahuuw/ragsytem/internal/ratelimit"
 	"github.com/tararahuuw/ragsytem/internal/rbac"
+	orgrepo "github.com/tararahuuw/ragsytem/internal/repository/organization"
 	userrepo "github.com/tararahuuw/ragsytem/internal/repository/user"
 	authsvc "github.com/tararahuuw/ragsytem/internal/service/auth"
 )
@@ -18,6 +19,7 @@ func Register(rg *gin.RouterGroup, cfg *config.Config, db *gorm.DB, rl *ratelimi
 	ctrl := authctrl.NewController(
 		authsvc.NewService(
 			userrepo.NewRepository(db),
+			orgrepo.NewRepository(db),
 			authsvc.Config{
 				Secret:     cfg.JWTSecret,
 				AccessTTL:  cfg.JWTAccessTTL,

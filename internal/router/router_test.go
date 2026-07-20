@@ -99,6 +99,8 @@ func TestUsers_RequireAuth(t *testing.T) {
 		{http.MethodGet, "/api/v1/chat/sessions"},
 		{http.MethodGet, "/api/v1/chat/sessions/abc"},
 		{http.MethodDelete, "/api/v1/chat/sessions/abc"},
+		{http.MethodGet, "/api/v1/organizations"},
+		{http.MethodGet, "/api/v1/organizations/pln"},
 	}
 	for _, tc := range cases {
 		w := httptest.NewRecorder()
@@ -132,6 +134,9 @@ func TestRBAC_AdminOnlyRoutes(t *testing.T) {
 		{"delete user role", http.MethodDelete, "/api/v1/users/1", "Bearer " + userTok, http.StatusForbidden},
 		{"role change no token", http.MethodPatch, "/api/v1/users/1/role", "", http.StatusUnauthorized},
 		{"role change user role", http.MethodPatch, "/api/v1/users/1/role", "Bearer " + userTok, http.StatusForbidden},
+		{"org create no token", http.MethodPost, "/api/v1/organizations", "", http.StatusUnauthorized},
+		{"org create user role", http.MethodPost, "/api/v1/organizations", "Bearer " + userTok, http.StatusForbidden},
+		{"org delete user role", http.MethodDelete, "/api/v1/organizations/pln", "Bearer " + userTok, http.StatusForbidden},
 	}
 	for _, tc := range cases {
 		w := httptest.NewRecorder()
