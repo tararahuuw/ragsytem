@@ -6,6 +6,7 @@ import (
 
 	"github.com/tararahuuw/ragsytem/internal/config"
 	authctrl "github.com/tararahuuw/ragsytem/internal/controller/auth"
+	cacheinfra "github.com/tararahuuw/ragsytem/internal/infra/cache"
 	"github.com/tararahuuw/ragsytem/internal/infra/email"
 	"github.com/tararahuuw/ragsytem/internal/middleware"
 	"github.com/tararahuuw/ragsytem/internal/ratelimit"
@@ -15,12 +16,13 @@ import (
 	authsvc "github.com/tararahuuw/ragsytem/internal/service/auth"
 )
 
-// Register wires the auth module and mounts its public routes.
-func Register(rg *gin.RouterGroup, cfg *config.Config, db *gorm.DB, rl *ratelimit.Limiter) {
+// Register wires the auth module and mounts its public routes. The org validator
+// (ExistsActive, hit on every register) uses the cached org repo.
+func Register(rg *gin.RouterGroup, cfg *config.Config, db *gorm.DB, rl *ratelimit.Limiter, c cacheinfra.Cache) {
 	ctrl := authctrl.NewController(
 		authsvc.NewService(
 			userrepo.NewRepository(db),
-			orgrepo.NewRepository(db),
+			orgrepo.NewCachedRepository(orgrepo.NewRepository(db), c, cfg.CacheTTL),
 			email.NewSender(cfg),
 			authsvc.Config{
 				Secret:           cfg.JWTSecret,

@@ -13,9 +13,13 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/tararahuuw/ragsytem/internal/config"
+	cacheinfra "github.com/tararahuuw/ragsytem/internal/infra/cache"
 	appjwt "github.com/tararahuuw/ragsytem/internal/jwt"
 	"github.com/tararahuuw/ragsytem/internal/router"
 )
+
+// noCache is a disabled (no-op) cache for router wiring in tests.
+func noCache() cacheinfra.Cache { return cacheinfra.New(&config.Config{}) }
 
 // newMockGorm returns a GORM DB backed by go-sqlmock so we can exercise the
 // full HTTP stack without a real PostgreSQL instance.
@@ -41,7 +45,7 @@ func TestHealthz_OK(t *testing.T) {
 	gdb, mock := newMockGorm(t)
 	mock.ExpectPing() // DB reachable
 
-	r := router.New(&config.Config{AppEnv: "test"}, gdb, nil)
+	r := router.New(&config.Config{AppEnv: "test"}, gdb, nil, noCache())
 
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/healthz", nil)
@@ -67,7 +71,7 @@ func TestHealthz_DBDown(t *testing.T) {
 	gdb, mock := newMockGorm(t)
 	mock.ExpectPing().WillReturnError(sqlmock.ErrCancelled) // DB unreachable
 
-	r := router.New(&config.Config{AppEnv: "test"}, gdb, nil)
+	r := router.New(&config.Config{AppEnv: "test"}, gdb, nil, noCache())
 
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/healthz", nil)
@@ -84,7 +88,7 @@ func TestHealthz_DBDown(t *testing.T) {
 func TestUsers_RequireAuth(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	gdb, _ := newMockGorm(t)
-	r := router.New(&config.Config{AppEnv: "test", JWTSecret: "test-secret"}, gdb, nil)
+	r := router.New(&config.Config{AppEnv: "test", JWTSecret: "test-secret"}, gdb, nil, noCache())
 
 	cases := []struct {
 		method, path string
@@ -118,7 +122,7 @@ func TestRBAC_AdminOnlyRoutes(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	secret := "test-secret"
 	gdb, _ := newMockGorm(t)
-	r := router.New(&config.Config{AppEnv: "test", JWTSecret: secret}, gdb, nil)
+	r := router.New(&config.Config{AppEnv: "test", JWTSecret: secret}, gdb, nil, noCache())
 
 	userTok, _ := appjwt.Generate(secret, 1, "u@x.com", "pln", "user", 1, appjwt.TypeAccess, time.Minute)
 
@@ -155,7 +159,7 @@ func TestSwaggerRouteRegistered(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	gdb, _ := newMockGorm(t)
 
-	r := router.New(&config.Config{AppEnv: "test"}, gdb, nil)
+	r := router.New(&config.Config{AppEnv: "test"}, gdb, nil, noCache())
 
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/swagger/index.html", nil)

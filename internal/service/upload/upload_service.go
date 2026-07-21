@@ -15,6 +15,7 @@ import (
 	"github.com/gabriel-vasile/mimetype"
 
 	uploaddto "github.com/tararahuuw/ragsytem/internal/dto/upload"
+	"github.com/tararahuuw/ragsytem/internal/infra/cache"
 	minioinfra "github.com/tararahuuw/ragsytem/internal/infra/minio"
 	"github.com/tararahuuw/ragsytem/internal/logger"
 	uploadmodel "github.com/tararahuuw/ragsytem/internal/model/upload"
@@ -57,13 +58,16 @@ type Service interface {
 type service struct {
 	repo     uploadrepo.Repository
 	store    *minioinfra.Client
+	cache    cache.Cache
 	cfg      Config
 	sessions sync.Map // sessionID -> *session
 }
 
-// NewService wires an upload Service and starts the idle-session janitor.
-func NewService(repo uploadrepo.Repository, store *minioinfra.Client, cfg Config) Service {
-	s := &service{repo: repo, store: store, cfg: cfg}
+// NewService wires an upload Service and starts the idle-session janitor. The
+// cache is used only to invalidate the document-list cache when a new document
+// completes (so /documents reflects the new file immediately).
+func NewService(repo uploadrepo.Repository, store *minioinfra.Client, c cache.Cache, cfg Config) Service {
+	s := &service{repo: repo, store: store, cache: c, cfg: cfg}
 	go s.janitor()
 	return s
 }
@@ -251,6 +255,12 @@ func (s *service) finalize(ctx context.Context, req uploaddto.ChunkRequest, acto
 		OrganizationCode: actor.OrgCode,
 	}); err != nil {
 		log.Error("upload: failed to save log", "session", req.SessionID, "error", err)
+	}
+
+	// A new document is now visible in this org — invalidate the document-list
+	// cache (this org + admin all-orgs). Fail-open: a stale list self-heals at TTL.
+	if err := s.cache.Delete(ctx, cache.DocListKeysForOrg(actor.OrgCode)...); err != nil {
+		log.Warn("upload: doc cache invalidate failed (fail-open)", "org", actor.OrgCode, "error", err)
 	}
 
 	// Quota accounting (non-fatal: don't fail a stored upload over bookkeeping).

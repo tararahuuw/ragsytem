@@ -7,6 +7,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/tararahuuw/ragsytem/internal/config"
+	cacheinfra "github.com/tararahuuw/ragsytem/internal/infra/cache"
 	minioinfra "github.com/tararahuuw/ragsytem/internal/infra/minio"
 	"github.com/tararahuuw/ragsytem/internal/middleware"
 	"github.com/tararahuuw/ragsytem/internal/ratelimit"
@@ -24,7 +25,7 @@ import (
 // New builds the Gin engine: global middleware, swagger UI, and versioned routes.
 // Each module registers itself (and wires its own dependencies) via its Register
 // function, keeping modules self-contained.
-func New(cfg *config.Config, db *gorm.DB, store *minioinfra.Client) *gin.Engine {
+func New(cfg *config.Config, db *gorm.DB, store *minioinfra.Client, c cacheinfra.Cache) *gin.Engine {
 	if cfg.IsProduction() {
 		gin.SetMode(gin.ReleaseMode)
 	}
@@ -57,11 +58,11 @@ func New(cfg *config.Config, db *gorm.DB, store *minioinfra.Client) *gin.Engine 
 	// API v1 — register modules here
 	v1 := r.Group("/api/v1")
 	healthroute.Register(v1, db)
-	authroute.Register(v1, cfg, db, rl)
+	authroute.Register(v1, cfg, db, rl, c)
 	userroute.Register(v1, cfg, db)
-	orgroute.Register(v1, cfg, db)
-	uploadroute.Register(v1, cfg, db, store, rl)
-	documentroute.Register(v1, cfg, db, store)
+	orgroute.Register(v1, cfg, db, c)
+	uploadroute.Register(v1, cfg, db, store, rl, c)
+	documentroute.Register(v1, cfg, db, store, c)
 	chatroute.Register(v1, cfg, db, rl)
 
 	// Debug/Sentry-verification routes — NEVER in production.

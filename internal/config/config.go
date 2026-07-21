@@ -66,6 +66,13 @@ type Config struct {
 	SentryEnvironment      string  // defaults to AppEnv when empty
 	SentryLevel            string  // minimum slog level forwarded: "error" (default) | "warn"
 	SentryTracesSampleRate float64 // 0 = errors only (no performance tracing)
+
+	// Redis / caching (empty RedisAddr or CacheEnabled=false = disabled / no-op).
+	RedisAddr     string
+	RedisPassword string
+	RedisDB       int
+	CacheEnabled  bool
+	CacheTTL      time.Duration
 }
 
 // Load reads configuration from the environment. It silently loads a .env file
@@ -121,7 +128,19 @@ func Load() *Config {
 		SentryEnvironment:      getEnv("SENTRY_ENVIRONMENT", ""),
 		SentryLevel:            getEnv("SENTRY_LEVEL", "error"),
 		SentryTracesSampleRate: getEnvFloat("SENTRY_TRACES_SAMPLE_RATE", 0.0),
+
+		RedisAddr:     getEnv("REDIS_ADDR", ""), // kosong = caching mati (no-op)
+		RedisPassword: getEnv("REDIS_PASSWORD", ""),
+		RedisDB:       int(getEnvInt64("REDIS_DB", 0)),
+		CacheEnabled:  getEnv("CACHE_ENABLED", "true") == "true",
+		CacheTTL:      getEnvDuration("CACHE_TTL", 5*time.Minute),
 	}
+}
+
+// CacheActive reports whether Redis caching should be wired (address set AND not
+// explicitly disabled). When false the app uses a no-op cache (always a miss).
+func (c *Config) CacheActive() bool {
+	return c.CacheEnabled && c.RedisAddr != ""
 }
 
 // ServerAddr returns the host:port the HTTP server should bind to.

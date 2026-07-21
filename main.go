@@ -6,6 +6,7 @@ import (
 
 	"github.com/tararahuuw/ragsytem/internal/config"
 	"github.com/tararahuuw/ragsytem/internal/database"
+	cacheinfra "github.com/tararahuuw/ragsytem/internal/infra/cache"
 	minioinfra "github.com/tararahuuw/ragsytem/internal/infra/minio"
 	sentryinfra "github.com/tararahuuw/ragsytem/internal/infra/sentry"
 	"github.com/tararahuuw/ragsytem/internal/logger"
@@ -61,7 +62,11 @@ func main() {
 		fatal("failed to connect to object storage (minio)", err)
 	}
 
-	r := router.New(cfg, db, store)
+	// Cache (Redis) is optional: a no-op when disabled, so this never fails.
+	cacheClient := cacheinfra.New(cfg)
+	defer cacheClient.Close()
+
+	r := router.New(cfg, db, store, cacheClient)
 
 	slog.Info("server starting",
 		"app", cfg.AppName,

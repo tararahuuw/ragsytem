@@ -256,6 +256,43 @@ cabang error di codebase **wajib** `log.Error(...)`, otomatis semua error tak te
   error untuk membuktikan pipeline; di-mount hanya bila `APP_ENV != production`. Playbook:
   `testing/full_failure_test.md`.
 
+## 4f. Caching — Redis 🔑
+
+Cache untuk endpoint **baca yang hot & jarang berubah**. Infra `internal/infra/cache` (interface
+`Cache` + impl Redis `go-redis/v9` + **no-op mock**). **Mockable:** `REDIS_ADDR` kosong /
+`CACHE_ENABLED=false` → no-op (semua baca ke DB). Pola sama AI/email/sentry.
+
+**Prinsip wajib:**
+- **Cache = optimasi, bukan sumber kebenaran.** Postgres tetap otoritatif.
+- **Fail-open:** tiap error cache (get/set/delete) → **log WARN + fallback DB**, request tak
+  boleh gagal. WARN → tak ke Sentry (§4e), jadi Redis down tak membanjiri alert.
+- **Cache-aside:** miss → DB → set TTL (`CACHE_TTL`, default 5m sebagai jaring pengaman).
+- **Invalidasi eksplisit di setiap write** (bukan andalkan TTL saja) — kunci korektness.
+- **Key ber-namespace** `ragsystem:<domain>:<...>` (lihat `internal/infra/cache/keys.go`).
+  **Data tenant WAJIB sertakan `organizationCode`** di key (mis. `doc:list:<org>`) agar tak bocor
+  antar-tenant.
+
+**Penempatan: decorator atas Repository interface** (mis. `organization.NewCachedRepository`
+membungkus `NewRepository(db)`). Service tak berubah; pola `interface + New...` tetap.
+
+**Yang di-cache saat ini** (evaluasi per §skill 5a):
+- **Organization** (`cachedRepository`): `ExistsActive` (hot: tiap register/bulk), `GetByCode`,
+  `List`. Invalidasi di `Create/Update/SoftDelete`. Auth memakai org repo ter-cache yang **sama**
+  (shared Redis) → validasi register ikut cepat. `CountUsers` **tak** di-cache (delete-guard,
+  correctness-sensitive).
+- **Document** (`cachedRepository`): `List(org)` + `FindByID` (metadata; dokumen immutable, tak
+  ada update/delete endpoint). **Presigned URL TIDAK di-cache** — di-generate fresh di service
+  (`toResponse`) supaya tak kedaluwarsa. Invalidasi list dipicu **cross-module** oleh
+  `upload.finalize` saat dokumen baru selesai (hapus `doc:list:<org>` + `doc:list:__all__`).
+
+**Yang TIDAK di-cache (sengaja):** user (sensitif keamanan: role/org/token_version, banyak titik
+mutasi, volume rendah), auth login/refresh (dinamis + kredensial), chat (jawaban AI kontekstual,
+hit-rate rendah), upload chunk (write; justru meng-invalidasi doc cache), health (harus real-time).
+
+**Menambah cache utk endpoint baru:** buat `cache.go` di package repository domain-nya (decorator),
+tambah key builder di `internal/infra/cache/keys.go`, invalidasi di semua write, pass `cache.Cache`
+lewat `Register(...)`. Selalu jalankan evaluasi Langkah 5a skill (cache/tidak + alasan).
+
 ## 5. Cara menambah domain baru (resep)
 
 Misal menambah domain `document` (ikuti pola module `auth`):
@@ -326,6 +363,7 @@ Semua via environment variable (lihat `.env.example`). Default aman untuk local.
 | `SMTP_HOST` / `SMTP_PORT` / `SMTP_USERNAME` / `SMTP_PASSWORD` / `SMTP_FROM` | (kosong) / 587 / (kosong) / (kosong) / no-reply@ragsystem.local | Email (forgot-password). **`SMTP_HOST` kosong = mock** (token di-log, tak dikirim) — §8d |
 | `APP_BASE_URL` / `PASSWORD_RESET_TTL` | http://localhost:8080 / 30m | base URL link reset + umur token reset |
 | `SENTRY_DSN` / `SENTRY_ENVIRONMENT` / `SENTRY_LEVEL` / `SENTRY_TRACES_SAMPLE_RATE` | (kosong) / (kosong=ikut APP_ENV) / error / 0.0 | Sentry error monitoring. **DSN kosong = mati** (no-op). `SENTRY_LEVEL` = ambang forward (`error` default / `warn`). §4e |
+| `REDIS_ADDR` / `REDIS_PASSWORD` / `REDIS_DB` / `CACHE_ENABLED` / `CACHE_TTL` | (kosong) / (kosong) / 0 / true / 5m | Redis caching. **`REDIS_ADDR` kosong ATAU `CACHE_ENABLED=false` = mati** (no-op → DB). §4f |
 
 ---
 
@@ -380,6 +418,9 @@ make run              # server :8080
 - [x] **Error monitoring — Sentry** (§4e): semua error server (5xx/panic/ERROR) auto-capture via
       slog handler, `SENTRY_LEVEL` configurable, DSN kosong=mockable. Debug endpoints (non-prod) +
       playbook `full_failure_test.md`. Pipeline terverifikasi (event terkirim ke ingest).
+- [x] **Caching — Redis** (§4f): cache-aside di **organization** (ExistsActive/Get/List) &
+      **document** (List/FindByID metadata), decorator atas Repository, invalidasi di write,
+      **fail-open**, mockable (REDIS_ADDR kosong=no-op). User/chat/auth/health sengaja tak di-cache.
 
 > Referensi desain sistem serupa yang sudah jadi: lihat `../elarch/CLAUDE.md` (pola upload
 > chunked, proxy LLM/OCR, access-control retrieval, chat history).
@@ -494,6 +535,24 @@ seperti AI client (`ai.NewClient`) — swap real/mock tanpa ubah caller.
 
 ## 9. Changelog keputusan (append di sini)
 
+- **2026-07-21** — **Caching Redis** (§4f, via /rag-dev). Infra `internal/infra/cache` (interface
+  `Cache` + Redis `go-redis/v9` + **no-op mock**; `REDIS_ADDR` kosong / `CACHE_ENABLED=false` =
+  mati). Pola **decorator atas Repository** (`organization.NewCachedRepository`,
+  `document.NewCachedRepository`) → service tak berubah. **Cache-aside + invalidasi eksplisit di
+  write + fail-open** (error cache → WARN + fallback DB, tak ke Sentry). Key ber-namespace
+  `ragsystem:*` (`infra/cache/keys.go`); data tenant sertakan org di key. **Di-cache:**
+  organization (`ExistsActive` hot di register, `GetByCode`, `List` — invalidasi Create/Update/
+  SoftDelete; auth pakai org repo ter-cache yang sama), document (`List(org)`+`FindByID` metadata;
+  presigned URL tetap fresh; list di-invalidasi cross-module oleh `upload.finalize`). **TIDAK di-
+  cache (sengaja, per evaluasi Langkah 5a skill):** user (sensitif keamanan, banyak titik mutasi,
+  volume rendah), auth login/refresh (dinamis+kredensial), chat (AI kontekstual), upload (write),
+  health (real-time). Skill `rag-dev` dapat **Langkah 5a** (wajib evaluasi cache/tidak per
+  endpoint). Config `REDIS_*`/`CACHE_*`; `.env` lokal `localhost:6379`, `.env.example` kosong. Dep
+  baru `github.com/redis/go-redis/v9`. Redis lokal via `brew install redis`. Smoke terverifikasi:
+  miss→set, hit (TTL 300s), ExistsActive cached, **invalidasi write** (org:list terhapus saat
+  create), doc:list cached, **fail-open** (Redis mati → semua endpoint tetap 200/201, 0 ERROR).
+  Playbook `testing/caching_test.md`. **Lanjutan (belum): rate-limit & upload-session state
+  terdistribusi via Redis (multi-instance), blacklist access-token utk revoke instan.**
 - **2026-07-20** — **Error monitoring Sentry** (§4e, via /rag-dev). **Semua error tercapture ke
   Sentry lewat slog handler** (`internal/logger/sentry.go`): record level ≥ `SENTRY_LEVEL`
   (default `error`) di-forward jadi event — menumpang disiplin §4b (tiap error branch `log.Error`),

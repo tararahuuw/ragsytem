@@ -6,6 +6,7 @@ import (
 
 	"github.com/tararahuuw/ragsytem/internal/config"
 	documentctrl "github.com/tararahuuw/ragsytem/internal/controller/document"
+	cacheinfra "github.com/tararahuuw/ragsytem/internal/infra/cache"
 	minioinfra "github.com/tararahuuw/ragsytem/internal/infra/minio"
 	"github.com/tararahuuw/ragsytem/internal/middleware"
 	documentrepo "github.com/tararahuuw/ragsytem/internal/repository/document"
@@ -13,10 +14,13 @@ import (
 )
 
 // Register wires the document module and mounts its routes (all require a JWT).
-func Register(rg *gin.RouterGroup, cfg *config.Config, db *gorm.DB, store *minioinfra.Client) {
+// Document metadata is cached (immutable, read-heavy); presigned URLs stay fresh
+// (generated in the service). The list cache is invalidated by the upload module.
+func Register(rg *gin.RouterGroup, cfg *config.Config, db *gorm.DB, store *minioinfra.Client, c cacheinfra.Cache) {
+	repo := documentrepo.NewCachedRepository(documentrepo.NewRepository(db), c, cfg.CacheTTL)
 	ctrl := documentctrl.NewController(
 		documentsvc.NewService(
-			documentrepo.NewRepository(db),
+			repo,
 			store,
 			documentsvc.Config{PreviewExpiry: cfg.UploadPreviewExpiry},
 		),

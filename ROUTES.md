@@ -434,6 +434,28 @@ ke Sentry (dipakai `testing/full_failure_test.md`):
   **exception**.
 - `GET /debug/message` — log `WARN` + `200` → ke Sentry **hanya** bila `SENTRY_LEVEL=warn`.
 
+## Caching (Redis)
+
+Cache **cache-aside** untuk endpoint baca yang hot & jarang berubah (`internal/infra/cache`,
+decorator atas Repository). **Fail-open** (Redis mati → fallback DB, request tetap jalan) &
+**mockable** (`REDIS_ADDR` kosong / `CACHE_ENABLED=false` = no-op). TTL default 5m. Detail §4f CLAUDE.md.
+
+| Endpoint | Cache? | Key | Invalidasi |
+|---|---|---|---|
+| `POST /auth/register` · `/register/bulk` (validasi org) | ✅ `ExistsActive` | `ragsystem:org:exists:<code>` | saat org create/update/delete |
+| `GET /organizations` | ✅ | `ragsystem:org:list` | saat org create/update/delete |
+| `GET /organizations/{code}` | ✅ | `ragsystem:org:get:<code>` | saat org create/update/delete (code itu) |
+| `POST/PUT/DELETE /organizations` | ❌ (write) | — | **memicu invalidasi** key org di atas |
+| `GET /documents` | ✅ metadata | `ragsystem:doc:list:<org atau __all__>` | saat upload dokumen baru selesai |
+| `GET /documents/{id}` | ✅ metadata | `ragsystem:doc:id:<id>` | (dokumen immutable; TTL) |
+| `POST /uploads/chunk` | ❌ (write) | — | **memicu invalidasi** `doc:list:<org>`+`__all__` saat selesai |
+| `GET /users/*`, `/auth/login|refresh` | ❌ | — | sensitif keamanan / dinamis (lihat §4f) |
+| `POST /chat/ask`, `GET /chat/*` | ❌ | — | jawaban AI kontekstual, hit-rate rendah |
+| `GET /healthz` | ❌ | — | liveness harus real-time |
+
+> **Presigned URL tidak di-cache** — hanya metadata dokumen; URL di-generate fresh tiap response
+> agar tak kedaluwarsa. **Key data tenant selalu mengandung `organizationCode`** (anti bocor antar-tenant).
+
 ## Konvensi menulis entri baru
 
 Dokumentasikan minimal: **Tujuan · Auth · Request (+validasi) · Bisnis logic (langkah +

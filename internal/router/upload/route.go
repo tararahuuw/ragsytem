@@ -6,6 +6,7 @@ import (
 
 	"github.com/tararahuuw/ragsytem/internal/config"
 	uploadctrl "github.com/tararahuuw/ragsytem/internal/controller/upload"
+	cacheinfra "github.com/tararahuuw/ragsytem/internal/infra/cache"
 	minioinfra "github.com/tararahuuw/ragsytem/internal/infra/minio"
 	"github.com/tararahuuw/ragsytem/internal/middleware"
 	"github.com/tararahuuw/ragsytem/internal/ratelimit"
@@ -13,12 +14,14 @@ import (
 	uploadsvc "github.com/tararahuuw/ragsytem/internal/service/upload"
 )
 
-// Register wires the upload module and mounts its routes (all require a JWT).
-func Register(rg *gin.RouterGroup, cfg *config.Config, db *gorm.DB, store *minioinfra.Client, rl *ratelimit.Limiter) {
+// Register wires the upload module and mounts its routes (all require a JWT). The
+// cache is passed so a completed upload can invalidate the document-list cache.
+func Register(rg *gin.RouterGroup, cfg *config.Config, db *gorm.DB, store *minioinfra.Client, rl *ratelimit.Limiter, c cacheinfra.Cache) {
 	ctrl := uploadctrl.NewController(
 		uploadsvc.NewService(
 			uploadrepo.NewRepository(db),
 			store,
+			c,
 			uploadsvc.Config{
 				MaxFileSize:   cfg.UploadMaxFileSize,
 				PreviewExpiry: cfg.UploadPreviewExpiry,

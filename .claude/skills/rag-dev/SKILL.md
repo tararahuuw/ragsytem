@@ -78,6 +78,31 @@ success) + WARN/ERROR di tiap cabang gagal, structured key–value, **tanpa data
 selalu bawa `request_id`. Tulis anotasi Swagger di handler (regenerasi di Langkah 5b). Pastikan
 `go build`/`vet`/`test` lolos.
 
+### Langkah 5a — Evaluasi caching (Redis) 🔑
+Untuk **setiap** endpoint baru/berubah, **wajib menilai apakah perlu caching Redis** (§4f
+CLAUDE.md, infra `internal/infra/cache`). Jangan pasang cache membabi buta — putuskan sadar:
+
+**Cache kandidat kuat** (pertimbangkan serius) bila endpoint **read** yang:
+- **sering dibaca** (hot path / dipanggil di banyak flow, mis. validasi dipanggil tiap request),
+- datanya **jarang berubah** (referensi/konfig/registry), dan
+- query-nya relatif mahal atau berulang identik.
+
+**Jangan cache** (default) bila:
+- operasi **write** (create/update/delete) — justru harus **meng-invalidasi** cache terkait,
+- data **sangat dinamis / per-request unik** (mis. jawaban AI kontekstual, presigned URL yang ada
+  masa berlaku — cache metadata boleh, URL-nya jangan),
+- hasilnya **sensitif keamanan** dan sulit dijamin konsistensinya, atau
+- volume baca rendah (cache = kompleksitas tanpa manfaat).
+
+Bila memutuskan cache, terapkan pola baku: **cache-aside** (miss → DB → set TTL), **key ber-
+namespace** (`ragsystem:<domain>:<...>`, **sertakan `organizationCode`** untuk data tenant agar
+tak bocor antar-tenant), **invalidasi eksplisit di setiap write**, **TTL** sebagai jaring pengaman,
+dan **fail-open** (Redis mati → log + fallback ke DB, request tak boleh gagal). Cache = optimasi;
+sumber kebenaran tetap Postgres. Redis mockable (`CACHE_ENABLED=false`/`REDIS_ADDR` kosong = no-op).
+
+**Wajib dicatat di Langkah 11 (summary) & ROUTES.md**: keputusan cache/tidak untuk tiap endpoint
++ alasan singkat (kunci cache, TTL, titik invalidasi). Bila ragu, tulis alasan tidak nge-cache.
+
 ## Langkah 5b — Update Swagger (bila perlu)
 Setelah implementasi kode, **update dokumentasi Swagger jika ada perubahan yang mempengaruhinya**:
 endpoint/route baru, perubahan method/path, request/response DTO, param, atau status code.
